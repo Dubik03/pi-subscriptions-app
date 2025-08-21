@@ -1,4 +1,4 @@
-// pages/service/[id].js
+// pages/services/[id].js
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -13,36 +13,54 @@ export default function ServiceDetail() {
   const router = useRouter();
   const { id } = router.query;
   const service = services.find((s) => s.id === parseInt(id));
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [Pi, setPi] = useState(null);
+  const [lastPaymentId, setLastPaymentId] = useState(null);
+  const [piLoaded, setPiLoaded] = useState(false);
 
+  // --------------------------
+  // Dynamické načtení Pi SDK
+  // --------------------------
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const initPi = () => {
-        if (window.Pi) {
-          window.Pi.init({ version: "2.0", sandbox: true });
-          setPi(window.Pi);
-        } else {
-          const script = document.createElement("script");
-          script.src = "https://sdk.minepi.com/pi-sdk.js";
-          script.async = true;
-          script.onload = () => {
-            window.Pi.init({ version: "2.0", sandbox: true });
-            setPi(window.Pi);
-          };
-          document.body.appendChild(script);
-        }
-      };
-      initPi();
-    }
+    if (typeof window === "undefined") return;
+
+    const script = document.createElement("script");
+    script.src = "https://sdk.minepi.com/pi-sdk.js";
+    script.async = true;
+
+    script.onload = () => {
+      try {
+        const isLocal = window.location.hostname === "localhost";
+        window.Pi.init({
+          version: "2.0",
+          sandbox: isLocal, // sandbox jen na localhostu
+        });
+        console.log("✅ Pi SDK loaded");
+        setPiLoaded(true);
+      } catch (err) {
+        console.error("❌ Pi SDK initialization error:", err);
+        setMessage("❌ Nepodařilo se inicializovat Pi SDK");
+      }
+    };
+
+    script.onerror = () => {
+      console.error("❌ Pi SDK failed to load");
+      setMessage("❌ Nepodařilo se načíst Pi SDK");
+    };
+
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
   }, []);
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
-  const handleSubscribe = async () => {
-    if (!Pi) {
-      setMessage("Pi SDK not loaded yet");
+  const handlePiApproveComplete = async () => {
+    if (!piLoaded || !window.Pi || !window.Pi.payments) {
+      setMessage("❌ Pi SDK není načtený.");
       return;
     }
 
@@ -50,57 +68,81 @@ export default function ServiceDetail() {
     setMessage("");
 
     try {
-      const auth = await Pi.authenticate(["payments"]);
-      const user = auth.user || { uid: "test-student-uid" };
+      window.Pi.payments.requestPayment({
+        productId: service.id,
+        amount: service.price,
+        onReadyForServerApproval: async (payment) => {
+          const paymentId = payment.paymentID;
+          setLastPaymentId(paymentId);
 
-      await Pi.createPayment(
-        {
-          amount: service.price,
-          memo: service.name,
-          metadata: {
-            planName: service.name,
-            studentId: user.uid,
-            teacherId: "22222222-2222-2222-2222-222222222222",
-          },
+          try {
+            // 1️⃣ Approve payment na serveru
+            const approveRes = await fetch("/api/pi/approvePayment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ paymentId, service }),
+            });
+            const approveData = await approveRes.json();
+            if (!approveRes.ok) throw new Error(JSON.stringify(approveData));
+
+            // 2️⃣ Complete payment na serveru
+            const completeRes = await fetch("/api/pi/completePayment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ paymentId }),
+            });
+            const completeData = await completeRes.json();
+            if (!completeRes.ok) throw new Error(JSON.stringify(completeData));
+
+            setMessage(
+              `✅ Payment approved & completed!\nPayment ID: ${paymentId}\nSubscription ID: ${completeData.subscription.id}`
+            );
+          } catch (err) {
+            console.error("Server error:", err);
+            setMessage("❌ Chyba serveru: " + err.message);
+          } finally {
+            setLoading(false);
+          }
         },
-        {
-          onReadyForServerApproval: async (paymentId) => {
-            // pokud sandbox a paymentId chybí, vytvoř testovací
-            const finalPaymentId = paymentId || `sandbox-${Date.now()}`;
-            setMessage(`Payment ready for approval: ${finalPaymentId}`);
-
-            // Uložíme platbu do Supabase
-            const res = await fetch("/api/pi/approvePayment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId: finalPaymentId, service, studentId: user.uid }),
-            });
-            const data = await res.json();
-            if (data.error) setMessage("Approve error: " + data.error);
-            else setMessage(`Payment approved and stored! Payment ID: ${finalPaymentId}`);
-          },
-          onReadyForServerCompletion: async (paymentId, txid) => {
-            const finalPaymentId = paymentId || `sandbox-${Date.now()}`;
-            setMessage(`Completing payment: ${finalPaymentId}, txid: ${txid}`);
-
-            const res = await fetch("/api/pi/completePayment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId: finalPaymentId, txid }),
-            });
-            const data = await res.json();
-            if (data.error) setMessage("Complete error: " + data.error);
-            else setMessage(`Payment completed! Subscription ID: ${data.subscription.id}`);
-          },
-          onCancel: () => setMessage("Payment canceled by user"),
-          onError: (err) => setMessage("Payment error: " + err.message),
-        }
-      );
+        onCancel: () => {
+          setMessage("❌ Platba zrušena uživatelem.");
+          setLoading(false);
+        },
+        onError: (err) => {
+          console.error("Pi SDK error:", err);
+          setMessage("❌ Chyba Pi SDK: " + JSON.stringify(err));
+          setLoading(false);
+        },
+      });
     } catch (err) {
-      setMessage("Error: " + err.message);
+      console.error("Unhandled error:", err);
+      setMessage("❌ Neočekávaná chyba: " + err.message);
+      setLoading(false);
     }
+  };
 
-    setLoading(false);
+  const handlePiRefund = async () => {
+    if (!lastPaymentId) return setMessage("❌ Nejprve proveď platbu.");
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const refundRes = await fetch("/api/pi/refundPayment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId: lastPaymentId }),
+      });
+      const refundData = await refundRes.json();
+      if (!refundRes.ok) throw new Error(JSON.stringify(refundData));
+
+      setMessage(`💸 Payment refunded!\nSubscription deaktivována.`);
+    } catch (err) {
+      console.error("Refund error:", err);
+      setMessage("❌ Chyba refundu: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -111,16 +153,20 @@ export default function ServiceDetail() {
         <p className="whitespace-pre-line mb-6 text-gray-600">{service.description}</p>
 
         <button
-          onClick={handleSubscribe}
-          disabled={loading}
+          onClick={handlePiApproveComplete}
+          disabled={loading || !piLoaded}
           className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
-          {loading ? "Probíhá..." : "Subscribe Now"}
+          {loading ? "Probíhá..." : "Subscribe & Pay (Pi SDK)"}
         </button>
 
-        <p className="mt-3 text-yellow-700">
-          ⚠️ Sandbox aktivní v běžném prohlížeči. Skutečné transakce v Pi Browseru uloží platbu stejně.
-        </p>
+        <button
+          onClick={handlePiRefund}
+          disabled={loading || !lastPaymentId}
+          className="px-6 py-2 bg-gradient-to-r from-red-400 to-pink-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
+        >
+          {loading ? "Probíhá..." : "Refund Payment"}
+        </button>
 
         <Link href="/subscriptions">
           <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform mt-3">
