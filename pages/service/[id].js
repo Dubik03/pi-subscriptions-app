@@ -14,81 +14,61 @@ export default function ServiceDetail() {
   const service = services.find(s => s.id === parseInt(id));
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [lastPaymentId, setLastPaymentId] = useState(null);
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
-  const handleSubscribe = async () => {
-    setLoading(true);
-    setMessage("");
-    try {
-      const res = await fetch("/api/createSubscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId: "uuid-studenta",
-          teacherId: "uuid-učitele",
-          planName: service.name,
-          piAmount: service.price,
-          durationDays: 30
-        }),
-      });
-      const data = await res.json();
-      setMessage(`Subscription vytvořeno! Escrow platba čeká: ${data.payment.id}`);
-    } catch (err) {
-      setMessage("Chyba: " + err.message);
-    }
-    setLoading(false);
-  };
+  const generatePaymentId = () => crypto.randomUUID();
 
-  const handlePiMock = async () => {
+  const handlePiApproveComplete = async () => {
     setLoading(true);
     setMessage("");
+    const paymentId = generatePaymentId();
+    setLastPaymentId(paymentId);
+
     try {
-      // 1. Approve payment
+      // 1️⃣ Approve payment
       const approveRes = await fetch("/api/pi/approvePayment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          paymentId: "11111111-1111-1111-1111-111111111111",
-          service
-        }),
+        body: JSON.stringify({ paymentId, service }),
       });
       const approveData = await approveRes.json();
+      if (!approveRes.ok) throw new Error(JSON.stringify(approveData));
 
-      // 2. Complete payment
+      // 2️⃣ Complete payment
+      const txid = crypto.randomUUID(); // mock TXID
       const completeRes = await fetch("/api/pi/completePayment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          paymentId: "11111111-1111-1111-1111-111111111111",
-          txid: "fake-txid-456"
-        }),
+        body: JSON.stringify({ paymentId, txid }),
       });
       const completeData = await completeRes.json();
+      if (!completeRes.ok) throw new Error(JSON.stringify(completeData));
 
-      setMessage(`✅ Mock Pi SDK complete!\nApprove: ${JSON.stringify(approveData)}\nComplete: ${JSON.stringify(completeData)}`);
+      setMessage(`✅ Payment approved & completed!\nPayment ID: ${paymentId}\nTXID: ${txid}\nSubscription ID: ${completeData.subscription.id}`);
     } catch (err) {
       setMessage("Chyba: " + err.message);
     }
     setLoading(false);
   };
 
-  // Nové tlačítko pro refund
-  const handleRefund = async () => {
+  const handlePiRefund = async () => {
+    if (!lastPaymentId) return setMessage("❌ Nejprve proveď platbu.");
+
     setLoading(true);
     setMessage("");
     try {
+      const refundTxid = crypto.randomUUID(); // mock TXID
       const res = await fetch("/api/pi/refundPayment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          paymentId: "11111111-1111-1111-1111-111111111111", // testovací paymentId
-          refundTxid: "fake-refund-789"
-        }),
+        body: JSON.stringify({ paymentId: lastPaymentId, refundTxid }),
       });
       const data = await res.json();
-      if (data.error) setMessage("Chyba: " + data.error);
-      else setMessage(`✅ Payment refunded!\nStatus: ${data.payment.status}`);
+      if (!res.ok) throw new Error(JSON.stringify(data));
+
+      setMessage(`💸 Payment refunded!\nRefund TXID: ${refundTxid}\nSubscription deactivated.`);
     } catch (err) {
       setMessage("Chyba: " + err.message);
     }
@@ -103,31 +83,25 @@ export default function ServiceDetail() {
         <p className="whitespace-pre-line mb-6 text-gray-600">{service.description}</p>
 
         <button
-          onClick={handleSubscribe}
+          onClick={handlePiApproveComplete}
           disabled={loading}
           className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
-          {loading ? "Probíhá..." : "Subscribe Now"}
+          {loading ? "Probíhá..." : "Subscribe & Pay (Pi SDK)"}
         </button>
 
         <button
-          onClick={handlePiMock}
-          disabled={loading}
-          className="px-6 py-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
-        >
-          {loading ? "Probíhá..." : "Pi SDK Mock"}
-        </button>
-
-        <button
-          onClick={handleRefund}
-          disabled={loading}
+          onClick={handlePiRefund}
+          disabled={loading || !lastPaymentId}
           className="px-6 py-2 bg-gradient-to-r from-red-400 to-pink-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
           {loading ? "Probíhá..." : "Refund Payment"}
         </button>
 
         <Link href="/subscriptions">
-          <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform">My Subscriptions</button>
+          <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform mt-3">
+            My Subscriptions
+          </button>
         </Link>
 
         {message && <pre className="mt-4 text-blue-700 whitespace-pre-wrap">{message}</pre>}
