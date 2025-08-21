@@ -20,13 +20,15 @@ export default async function handler(req, res) {
           payer_id: studentId,
           payee_id: teacherId,
           pi_amount: service.price,
-          status: "pending",
+          status: "pending", // ✅ musí být pending kvůli check constraint
         },
       ])
       .select()
       .single();
 
     if (error) throw error;
+
+    console.log("Payment approved (mock):", data);
 
     res.status(200).json({ payment: data });
   } catch (err) {
