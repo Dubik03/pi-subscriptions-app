@@ -19,19 +19,36 @@ export default function ServiceDetail() {
   const [lastPaymentId, setLastPaymentId] = useState(null);
   const [piLoaded, setPiLoaded] = useState(false);
 
+  // --------------------------
+  // Dynamické načtení Pi SDK
+  // --------------------------
   useEffect(() => {
-    // Dynamicky načteme Pi SDK jen na klientu
+    if (typeof window === "undefined") return;
+
     const script = document.createElement("script");
     script.src = "https://sdk.minepi.com/pi-sdk.js";
+    script.async = true;
+
     script.onload = () => {
-      window.Pi?.init({ version: "2.0" }); // produkční mód na Vercelu
-      setPiLoaded(true);
-      console.log("✅ Pi SDK loaded (production)");
+      try {
+        const isLocal = window.location.hostname === "localhost";
+        window.Pi.init({
+          version: "2.0",
+          sandbox: isLocal, // sandbox jen na localhostu
+        });
+        console.log("✅ Pi SDK loaded");
+        setPiLoaded(true);
+      } catch (err) {
+        console.error("❌ Pi SDK initialization error:", err);
+        setMessage("❌ Nepodařilo se inicializovat Pi SDK");
+      }
     };
+
     script.onerror = () => {
       console.error("❌ Pi SDK failed to load");
       setMessage("❌ Nepodařilo se načíst Pi SDK");
     };
+
     document.body.appendChild(script);
 
     return () => {
@@ -42,7 +59,7 @@ export default function ServiceDetail() {
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
   const handlePiApproveComplete = async () => {
-    if (!window.Pi || !window.Pi.payments) {
+    if (!piLoaded || !window.Pi || !window.Pi.payments) {
       setMessage("❌ Pi SDK není načtený.");
       return;
     }
