@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   try {
     console.log("Refund Payment (mock):", paymentId, refundTxid);
 
-    // Update payment na refunded a přidat refundTxid
+    // 1️⃣ Update payment na refunded a přidat refund_txid
     const { data: payment, error: payError } = await supabase
       .from("payments")
       .update({ status: "refunded", refund_txid: refundTxid })
@@ -20,6 +20,16 @@ export default async function handler(req, res) {
       .single();
 
     if (payError) throw payError;
+
+    // 2️⃣ Deaktivovat subscription, pokud existuje
+    if (payment.subscription_id) {
+      const { error: subError } = await supabase
+        .from("subscriptions")
+        .update({ status: "cancelled" }) // nebo active: false podle tabulky
+        .eq("id", payment.subscription_id);
+
+      if (subError) throw subError;
+    }
 
     res.status(200).json({ ok: true, payment });
   } catch (err) {
