@@ -1,18 +1,15 @@
-// pages/api/pi/completePayment.js
 import { supabase } from "../../../lib/supabase";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const { paymentId, txid } = req.body;
-
   if (!paymentId || !txid) {
     return res.status(400).json({ error: "Missing paymentId or txid" });
   }
 
   try {
-    // 🔑 Volání Pi API pro ověření (mocknuto)
-    console.log("Complete Payment:", paymentId, txid);
+    console.log("Complete Payment (mock):", paymentId, txid);
 
     // 1. Vytvořit subscription (student/teacher hardcodnuto zatím)
     const endDate = new Date();
@@ -22,7 +19,7 @@ export default async function handler(req, res) {
       .from("subscriptions")
       .insert([
         {
-          user_id: "11111111-1111-1111-1111-111111111111", // student placeholder
+          user_id: "11111111-1111-1111-1111-111111111111",
           teacher_id: "22222222-2222-2222-2222-222222222222",
           plan_name: "Plan přes Pi",
           pi_amount: 2,
@@ -34,7 +31,7 @@ export default async function handler(req, res) {
 
     if (subError) throw subError;
 
-    // 2. Update payment na completed a přidat subscription_id
+    // 2. Update payment na released a přidat subscription_id a txid
     const { data: payment, error: payError } = await supabase
       .from("payments")
       .update({ status: "released", subscription_id: subscription.id, txid })
