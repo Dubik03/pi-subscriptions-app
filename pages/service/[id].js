@@ -1,5 +1,5 @@
 // pages/services/[id].js
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 
@@ -17,129 +17,67 @@ export default function ServiceDetail() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [lastPaymentId, setLastPaymentId] = useState(null);
-  const [piLoaded, setPiLoaded] = useState(false);
-
-  // --------------------------
-  // Dynamické načtení Pi SDK
-  // --------------------------
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const script = document.createElement("script");
-    script.src = "https://sdk.minepi.com/pi-sdk.js";
-    script.async = true;
-
-    script.onload = () => {
-      try {
-        const isLocal = window.location.hostname === "localhost";
-        window.Pi.init({
-          version: "2.0",
-          sandbox: isLocal, // sandbox jen na localhostu
-        });
-        console.log("✅ Pi SDK loaded");
-        setPiLoaded(true);
-      } catch (err) {
-        console.error("❌ Pi SDK initialization error:", err);
-        setMessage("❌ Nepodařilo se inicializovat Pi SDK");
-      }
-    };
-
-    script.onerror = () => {
-      console.error("❌ Pi SDK failed to load");
-      setMessage("❌ Nepodařilo se načíst Pi SDK");
-    };
-
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, []);
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
-  const handlePiApproveComplete = async () => {
-    if (!piLoaded || !window.Pi || !window.Pi.payments) {
-      setMessage("❌ Pi SDK není načtený.");
-      return;
-    }
-
+  const handleApprove = async () => {
     setLoading(true);
     setMessage("");
-
     try {
-      window.Pi.payments.requestPayment({
-        productId: service.id,
-        amount: service.price,
-        onReadyForServerApproval: async (payment) => {
-          const paymentId = payment.paymentID;
-          setLastPaymentId(paymentId);
-
-          try {
-            // 1️⃣ Approve payment na serveru
-            const approveRes = await fetch("/api/pi/approvePayment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId, service }),
-            });
-            const approveData = await approveRes.json();
-            if (!approveRes.ok) throw new Error(JSON.stringify(approveData));
-
-            // 2️⃣ Complete payment na serveru
-            const completeRes = await fetch("/api/pi/completePayment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId }),
-            });
-            const completeData = await completeRes.json();
-            if (!completeRes.ok) throw new Error(JSON.stringify(completeData));
-
-            setMessage(
-              `✅ Payment approved & completed!\nPayment ID: ${paymentId}\nSubscription ID: ${completeData.subscription.id}`
-            );
-          } catch (err) {
-            console.error("Server error:", err);
-            setMessage("❌ Chyba serveru: " + err.message);
-          } finally {
-            setLoading(false);
-          }
-        },
-        onCancel: () => {
-          setMessage("❌ Platba zrušena uživatelem.");
-          setLoading(false);
-        },
-        onError: (err) => {
-          console.error("Pi SDK error:", err);
-          setMessage("❌ Chyba Pi SDK: " + JSON.stringify(err));
-          setLoading(false);
-        },
+      const res = await fetch("/api/pi/approvePayment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId: "test-payment-" + Date.now(), service }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(JSON.stringify(data));
+      setLastPaymentId(data.payment.id);
+      setMessage("✅ Payment approved & saved to DB!\nPayment ID: " + data.payment.id);
     } catch (err) {
-      console.error("Unhandled error:", err);
-      setMessage("❌ Neočekávaná chyba: " + err.message);
+      console.error("Approve error:", err);
+      setMessage("❌ Chyba při approve: " + err.message);
+    } finally {
       setLoading(false);
     }
   };
 
-  const handlePiRefund = async () => {
-    if (!lastPaymentId) return setMessage("❌ Nejprve proveď platbu.");
-
+  const handleComplete = async () => {
+    if (!lastPaymentId) return setMessage("❌ Nejprve proveď approve.");
     setLoading(true);
     setMessage("");
-
     try {
-      const refundRes = await fetch("/api/pi/refundPayment", {
+      const res = await fetch("/api/pi/completePayment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paymentId: lastPaymentId }),
       });
-      const refundData = await refundRes.json();
-      if (!refundRes.ok) throw new Error(JSON.stringify(refundData));
+      const data = await res.json();
+      if (!res.ok) throw new Error(JSON.stringify(data));
+      setMessage("🎉 Payment completed!\nSubscription ID: " + data.subscription.id);
+    } catch (err) {
+      console.error("Complete error:", err);
+      setMessage("❌ Chyba při complete: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      setMessage(`💸 Payment refunded!\nSubscription deaktivována.`);
+  const handleRefund = async () => {
+    if (!lastPaymentId) return setMessage("❌ Nejprve proveď approve.");
+    setLoading(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/pi/refundPayment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId: lastPaymentId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(JSON.stringify(data));
+      setMessage("💸 Payment refunded!\nSubscription deaktivována.");
     } catch (err) {
       console.error("Refund error:", err);
-      setMessage("❌ Chyba refundu: " + err.message);
+      setMessage("❌ Chyba při refundu: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -153,19 +91,27 @@ export default function ServiceDetail() {
         <p className="whitespace-pre-line mb-6 text-gray-600">{service.description}</p>
 
         <button
-          onClick={handlePiApproveComplete}
-          disabled={loading || !piLoaded}
-          className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
+          onClick={handleApprove}
+          disabled={loading}
+          className="px-6 py-2 bg-green-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
-          {loading ? "Probíhá..." : "Subscribe & Pay (Pi SDK)"}
+          {loading ? "Probíhá..." : "Approve Payment (test)"}
         </button>
 
         <button
-          onClick={handlePiRefund}
+          onClick={handleComplete}
           disabled={loading || !lastPaymentId}
-          className="px-6 py-2 bg-gradient-to-r from-red-400 to-pink-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
+          className="px-6 py-2 bg-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
-          {loading ? "Probíhá..." : "Refund Payment"}
+          {loading ? "Probíhá..." : "Complete Payment (test)"}
+        </button>
+
+        <button
+          onClick={handleRefund}
+          disabled={loading || !lastPaymentId}
+          className="px-6 py-2 bg-red-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform"
+        >
+          {loading ? "Probíhá..." : "Refund Payment (test)"}
         </button>
 
         <Link href="/subscriptions">
