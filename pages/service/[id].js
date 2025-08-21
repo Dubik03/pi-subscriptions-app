@@ -1,5 +1,5 @@
 // pages/services/[id].js
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 
@@ -17,12 +17,35 @@ export default function ServiceDetail() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [lastPaymentId, setLastPaymentId] = useState(null);
+  const [sdkLoaded, setSdkLoaded] = useState(false);
+
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://sdk.minepi.com/pi-sdk.js";
+    script.async = true;
+    script.onload = () => {
+      if (window.Pi) {
+        window.Pi.init({ version: "2.0", sandbox: true }); // sandbox: false v produkci
+        setSdkLoaded(true);
+        console.log("Pi SDK loaded and initialized");
+      }
+    };
+    script.onerror = () => {
+      console.error("Failed to load Pi SDK");
+      setMessage("❌ Nepodařilo se načíst Pi SDK");
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
   const handlePiApproveComplete = async () => {
-    if (!window.Pi || !window.Pi.payments) {
-      setMessage("❌ Pi SDK není načtený.");
+    if (!sdkLoaded || !window.Pi || !window.Pi.payments) {
+      setMessage("❌ Pi SDK ještě není načtený.");
       return;
     }
 
@@ -38,7 +61,6 @@ export default function ServiceDetail() {
           setLastPaymentId(paymentId);
 
           try {
-            // 1️⃣ Approve payment na serveru
             const approveRes = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -47,7 +69,6 @@ export default function ServiceDetail() {
             const approveData = await approveRes.json();
             if (!approveRes.ok) throw new Error(JSON.stringify(approveData));
 
-            // 2️⃣ Complete payment na serveru
             const completeRes = await fetch("/api/pi/completePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -116,7 +137,7 @@ export default function ServiceDetail() {
 
         <button
           onClick={handlePiApproveComplete}
-          disabled={loading}
+          disabled={loading || !sdkLoaded}
           className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
           {loading ? "Probíhá..." : "Subscribe & Pay (Pi SDK)"}
