@@ -1,3 +1,4 @@
+// pages/services/[id].js
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -12,38 +13,49 @@ export default function ServiceDetail() {
   const router = useRouter();
   const { id } = router.query;
   const service = services.find((s) => s.id === parseInt(id));
-
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [Pi, setPi] = useState(null);
-  const [lastPaymentId, setLastPaymentId] = useState(null);
 
-  // --- Pi SDK init (sandbox) ---
+  // --- Pi SDK init (sandbox always) ---
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const script = document.createElement("script");
-      script.src = "https://sdk.minepi.com/pi-sdk.js";
-      script.async = true;
-      script.onload = () => {
-        window.Pi.init({ version: "2.0", sandbox: true });
-        setPi(window.Pi);
+      const initPi = () => {
+        if (window.Pi) {
+          window.Pi.init({ version: "2.0", sandbox: true });
+          setPi(window.Pi);
+        } else {
+          const script = document.createElement("script");
+          script.src = "https://sdk.minepi.com/pi-sdk.js";
+          script.async = true;
+          script.onload = () => {
+            window.Pi.init({ version: "2.0", sandbox: true });
+            setPi(window.Pi);
+          };
+          document.body.appendChild(script);
+        }
       };
-      document.body.appendChild(script);
+      initPi();
     }
   }, []);
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
   const handleSubscribe = async () => {
-    if (!Pi) return setMessage("❌ Pi SDK není načtený");
+    if (!Pi) {
+      setMessage("Pi SDK not loaded yet");
+      return;
+    }
 
     setLoading(true);
     setMessage("");
 
     try {
+      // --- authenticate user (sandbox) ---
       const auth = await Pi.authenticate(["payments"]);
-      const user = auth.user || { uid: "sandbox-student-uid" };
+      const user = auth.user || { uid: "test-student-uid" };
 
+      // --- create sandbox payment ---
       await Pi.createPayment(
         {
           amount: service.price,
@@ -55,25 +67,19 @@ export default function ServiceDetail() {
           },
         },
         {
-          onReadyForServerApproval: async (payment) => {
-            const paymentId = payment.paymentID;
-            setLastPaymentId(paymentId);
-
-            setMessage(`💰 Payment ready for server approval: ${paymentId}`);
-
-            // --- uložíme escrow payment na server ---
+          onReadyForServerApproval: async (paymentId) => {
+            setMessage(`Payment ready for approval (sandbox): ${paymentId}`);
             const res = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId, service, studentId: user.uid }),
+              body: JSON.stringify({ paymentId, service }),
             });
             const data = await res.json();
             if (data.error) setMessage("Approve error: " + data.error);
-            else setMessage(`✅ Escrow payment created (pending)`);
+            else setMessage(`Payment approved on backend (sandbox)!`);
           },
           onReadyForServerCompletion: async (paymentId, txid) => {
-            setMessage(`💳 Completing payment: ${paymentId}, txid: ${txid}`);
-
+            setMessage(`Completing payment (sandbox): ${paymentId}, txid: ${txid}`);
             const res = await fetch("/api/pi/completePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -81,14 +87,14 @@ export default function ServiceDetail() {
             });
             const data = await res.json();
             if (data.error) setMessage("Complete error: " + data.error);
-            else setMessage(`🎉 Payment completed! Subscription ID: ${data.subscription.id}`);
+            else setMessage(`Payment completed! Subscription ID: ${data.subscription.id}`);
           },
-          onCancel: () => setMessage("❌ Payment cancelled by user"),
-          onError: (err) => setMessage("❌ Pi SDK error: " + JSON.stringify(err)),
+          onCancel: () => setMessage("Payment canceled by user"),
+          onError: (err) => setMessage("Payment error: " + err.message),
         }
       );
     } catch (err) {
-      setMessage("❌ Error: " + err.message);
+      setMessage("Error: " + err.message);
     }
 
     setLoading(false);
@@ -106,8 +112,12 @@ export default function ServiceDetail() {
           disabled={loading}
           className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
-          {loading ? "Probíhá..." : "Subscribe & Pay"}
+          {loading ? "Probíhá..." : "Subscribe Now"}
         </button>
+
+        <p className="mt-3 text-yellow-700">
+          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči (Chrome, Firefox).
+        </p>
 
         <Link href="/subscriptions">
           <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform mt-3">
