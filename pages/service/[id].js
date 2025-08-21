@@ -17,15 +17,25 @@ export default function ServiceDetail() {
   const [message, setMessage] = useState("");
   const [Pi, setPi] = useState(null);
 
+  // --- Pi SDK init ---
   useEffect(() => {
-    if (typeof window !== "undefined" && window.Pi) {
-      setPi(window.Pi);
-    } else {
-      const script = document.createElement("script");
-      script.src = "https://sdk.minepi.com/pi-sdk.js";
-      script.async = true;
-      script.onload = () => setPi(window.Pi);
-      document.body.appendChild(script);
+    if (typeof window !== "undefined") {
+      const initPi = () => {
+        if (window.Pi) {
+          window.Pi.init({ version: "2.0" });
+          setPi(window.Pi);
+        } else {
+          const script = document.createElement("script");
+          script.src = "https://sdk.minepi.com/pi-sdk.js";
+          script.async = true;
+          script.onload = () => {
+            window.Pi.init({ version: "2.0" });
+            setPi(window.Pi);
+          };
+          document.body.appendChild(script);
+        }
+      };
+      initPi();
     }
   }, []);
 
@@ -41,22 +51,25 @@ export default function ServiceDetail() {
     setMessage("");
 
     try {
-      // Autentizace uživatele
+      // --- authenticate user ---
       const auth = await Pi.authenticate(["payments"]);
       const user = auth.user;
       const accessToken = auth.accessToken;
 
-      // Vytvoření platby
-      const payment = await Pi.createPayment(
+      // --- create payment ---
+      await Pi.createPayment(
         {
           amount: service.price,
           memo: service.name,
-          metadata: { planName: service.name, studentId: user.uid, teacherId: "22222222-2222-2222-2222-222222222222" },
+          metadata: {
+            planName: service.name,
+            studentId: user.uid,
+            teacherId: "22222222-2222-2222-2222-222222222222",
+          },
         },
         {
           onReadyForServerApproval: async (paymentId) => {
             setMessage(`Payment ready for approval: ${paymentId}`);
-            // zavoláme náš backend pro approve
             const res = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -81,8 +94,6 @@ export default function ServiceDetail() {
           onError: (err) => setMessage("Payment error: " + err.message),
         }
       );
-
-      console.log("Payment created:", payment);
     } catch (err) {
       setMessage("Error: " + err.message);
     }
