@@ -42,8 +42,8 @@ export default async function handler(req, res) {
     // ------------------------
     // 2️⃣ Uložit do Supabase
     // ------------------------
-    const studentId = "11111111-1111-1111-1111-111111111111"; // placeholder, dej skutečné ID
-    const teacherId = "22222222-2222-2222-2222-222222222222"; // placeholder
+    const studentId = "11111111-1111-1111-1111-111111111111"; // placeholder – nahraď skutečným ID uživatele
+    const teacherId = "22222222-2222-2222-2222-222222222222"; // placeholder – nahraď skutečným ID příjemce
 
     const { data: payment, error: payError } = await supabase
       .from("payments")
@@ -53,7 +53,7 @@ export default async function handler(req, res) {
           payer_id: studentId,
           payee_id: teacherId,
           pi_amount: service.price,
-          status: "approved", // protože platba je nyní approved
+          status: "approved", // platba je nyní approved
         },
       ])
       .select()
