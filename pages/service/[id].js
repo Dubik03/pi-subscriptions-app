@@ -1,4 +1,4 @@
-// pages/services/[id].js
+// pages/service/[id].js
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
