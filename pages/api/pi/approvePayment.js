@@ -29,7 +29,7 @@ export default async function handler(req, res) {
         "Authorization": `Key ${PI_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: null, // Pi API approve endpoint nevyžaduje tělo
+      body: JSON.stringify({}), // Pi API approve endpoint může vyžadovat prázdný JSON
     });
 
     if (!response.ok) {
@@ -42,8 +42,9 @@ export default async function handler(req, res) {
     // ------------------------
     // 2️⃣ Uložit do Supabase
     // ------------------------
-    const studentId = "11111111-1111-1111-1111-111111111111"; // placeholder – nahraď skutečným ID uživatele
-    const teacherId = "22222222-2222-2222-2222-222222222222"; // placeholder – nahraď skutečným ID příjemce
+    // TODO: nahraďte skutečnými ID uživatele a příjemce
+    const studentId = "11111111-1111-1111-1111-111111111111";
+    const teacherId = "22222222-2222-2222-2222-222222222222";
 
     const { data: payment, error: payError } = await supabase
       .from("payments")
@@ -53,7 +54,7 @@ export default async function handler(req, res) {
           payer_id: studentId,
           payee_id: teacherId,
           pi_amount: service.price,
-          status: "approved", // platba je nyní approved
+          status: "approved",
         },
       ])
       .select()
