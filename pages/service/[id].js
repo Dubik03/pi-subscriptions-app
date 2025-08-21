@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 
@@ -12,22 +12,29 @@ export default function ServiceDetail() {
   const router = useRouter();
   const { id } = router.query;
   const service = services.find(s => s.id === parseInt(id));
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [lastPaymentId, setLastPaymentId] = useState(null);
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
-  const generatePaymentId = () => crypto.randomUUID();
+  useEffect(() => {
+    // Pi SDK callback – připravený paymentId
+    if (window.Pi) {
+      window.Pi.onReadyForServerApproval((paymentId) => {
+        setLastPaymentId(paymentId);
+        handlePiApproveComplete(paymentId);
+      });
+    }
+  }, []);
 
-  const handlePiApproveComplete = async () => {
+  const handlePiApproveComplete = async (paymentId) => {
     setLoading(true);
     setMessage("");
-    const paymentId = generatePaymentId();
-    setLastPaymentId(paymentId);
 
     try {
-      // 1️⃣ Approve payment
+      // 1️⃣ Approve payment na serveru
       const approveRes = await fetch("/api/pi/approvePayment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -36,20 +43,20 @@ export default function ServiceDetail() {
       const approveData = await approveRes.json();
       if (!approveRes.ok) throw new Error(JSON.stringify(approveData));
 
-      // 2️⃣ Complete payment
-      const txid = crypto.randomUUID(); // mock TXID
+      // 2️⃣ Complete payment na serveru
       const completeRes = await fetch("/api/pi/completePayment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentId, txid }),
+        body: JSON.stringify({ paymentId }),
       });
       const completeData = await completeRes.json();
       if (!completeRes.ok) throw new Error(JSON.stringify(completeData));
 
-      setMessage(`✅ Payment approved & completed!\nPayment ID: ${paymentId}\nTXID: ${txid}\nSubscription ID: ${completeData.subscription.id}`);
+      setMessage(`✅ Payment approved & completed!\nPayment ID: ${paymentId}\nSubscription ID: ${completeData.subscription.id}`);
     } catch (err) {
       setMessage("Chyba: " + err.message);
     }
+
     setLoading(false);
   };
 
@@ -59,16 +66,15 @@ export default function ServiceDetail() {
     setLoading(true);
     setMessage("");
     try {
-      const refundTxid = crypto.randomUUID(); // mock TXID
       const res = await fetch("/api/pi/refundPayment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentId: lastPaymentId, refundTxid }),
+        body: JSON.stringify({ paymentId: lastPaymentId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(JSON.stringify(data));
 
-      setMessage(`💸 Payment refunded!\nRefund TXID: ${refundTxid}\nSubscription deactivated.`);
+      setMessage(`💸 Payment refunded!\nSubscription deactivated.`);
     } catch (err) {
       setMessage("Chyba: " + err.message);
     }
@@ -83,7 +89,7 @@ export default function ServiceDetail() {
         <p className="whitespace-pre-line mb-6 text-gray-600">{service.description}</p>
 
         <button
-          onClick={handlePiApproveComplete}
+          onClick={() => window.Pi && window.Pi.requestPayment(service.price)}
           disabled={loading}
           className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
