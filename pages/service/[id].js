@@ -16,23 +16,20 @@ export default function ServiceDetail() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [Pi, setPi] = useState(null);
-  const [isPiBrowser, setIsPiBrowser] = useState(false);
 
-  // --- Pi SDK init + Pi Browser detekce ---
+  // --- Pi SDK init (sandbox always) ---
   useEffect(() => {
     if (typeof window !== "undefined") {
       const initPi = () => {
         if (window.Pi) {
-          setIsPiBrowser(!!window.Pi.isPiBrowser);
-          window.Pi.init({ version: "2.0", sandbox: !window.Pi.isPiBrowser });
+          window.Pi.init({ version: "2.0", sandbox: true });
           setPi(window.Pi);
         } else {
           const script = document.createElement("script");
           script.src = "https://sdk.minepi.com/pi-sdk.js";
           script.async = true;
           script.onload = () => {
-            setIsPiBrowser(!!window.Pi.isPiBrowser);
-            window.Pi.init({ version: "2.0", sandbox: true }); // sandbox = true mimo Pi Browser
+            window.Pi.init({ version: "2.0", sandbox: true });
             setPi(window.Pi);
           };
           document.body.appendChild(script);
@@ -50,21 +47,15 @@ export default function ServiceDetail() {
       return;
     }
 
-    if (!isPiBrowser) {
-      setMessage("Pi SDK funguje jen v Pi Browseru. Použij Pi App pro test.");
-      return;
-    }
-
     setLoading(true);
     setMessage("");
 
     try {
-      // --- authenticate user ---
+      // --- authenticate user (sandbox) ---
       const auth = await Pi.authenticate(["payments"]);
-      const user = auth.user;
-      const accessToken = auth.accessToken;
+      const user = auth.user || { uid: "test-student-uid" };
 
-      // --- create payment ---
+      // --- create sandbox payment ---
       await Pi.createPayment(
         {
           amount: service.price,
@@ -77,7 +68,7 @@ export default function ServiceDetail() {
         },
         {
           onReadyForServerApproval: async (paymentId) => {
-            setMessage(`Payment ready for approval: ${paymentId}`);
+            setMessage(`Payment ready for approval (sandbox): ${paymentId}`);
             const res = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -85,10 +76,10 @@ export default function ServiceDetail() {
             });
             const data = await res.json();
             if (data.error) setMessage("Approve error: " + data.error);
-            else setMessage(`Payment approved on backend!`);
+            else setMessage(`Payment approved on backend (sandbox)!`);
           },
           onReadyForServerCompletion: async (paymentId, txid) => {
-            setMessage(`Completing payment: ${paymentId}, txid: ${txid}`);
+            setMessage(`Completing payment (sandbox): ${paymentId}, txid: ${txid}`);
             const res = await fetch("/api/pi/completePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -124,11 +115,9 @@ export default function ServiceDetail() {
           {loading ? "Probíhá..." : "Subscribe Now"}
         </button>
 
-        {!isPiBrowser && (
-          <p className="mt-3 text-red-500">
-            ⚠️ Pi SDK funguje jen v Pi Browseru. Pro testování použij Pi App (sandbox režim je aktivní).
-          </p>
-        )}
+        <p className="mt-3 text-yellow-700">
+          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči (Chrome, Firefox).
+        </p>
 
         <Link href="/subscriptions">
           <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform mt-3">
