@@ -1,4 +1,4 @@
-// pages/service/[id].js
+// pages/services/[id].js
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -16,20 +16,23 @@ export default function ServiceDetail() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [Pi, setPi] = useState(null);
+  const [isPiBrowser, setIsPiBrowser] = useState(false);
 
-  // --- Pi SDK init ---
+  // --- Pi SDK init + Pi Browser detekce ---
   useEffect(() => {
     if (typeof window !== "undefined") {
       const initPi = () => {
         if (window.Pi) {
-          window.Pi.init({ version: "2.0" });
+          setIsPiBrowser(!!window.Pi.isPiBrowser);
+          window.Pi.init({ version: "2.0", sandbox: !window.Pi.isPiBrowser });
           setPi(window.Pi);
         } else {
           const script = document.createElement("script");
           script.src = "https://sdk.minepi.com/pi-sdk.js";
           script.async = true;
           script.onload = () => {
-            window.Pi.init({ version: "2.0" });
+            setIsPiBrowser(!!window.Pi.isPiBrowser);
+            window.Pi.init({ version: "2.0", sandbox: true }); // sandbox = true mimo Pi Browser
             setPi(window.Pi);
           };
           document.body.appendChild(script);
@@ -44,6 +47,11 @@ export default function ServiceDetail() {
   const handleSubscribe = async () => {
     if (!Pi) {
       setMessage("Pi SDK not loaded yet");
+      return;
+    }
+
+    if (!isPiBrowser) {
+      setMessage("Pi SDK funguje jen v Pi Browseru. Použij Pi App pro test.");
       return;
     }
 
@@ -115,6 +123,12 @@ export default function ServiceDetail() {
         >
           {loading ? "Probíhá..." : "Subscribe Now"}
         </button>
+
+        {!isPiBrowser && (
+          <p className="mt-3 text-red-500">
+            ⚠️ Pi SDK funguje jen v Pi Browseru. Pro testování použij Pi App (sandbox režim je aktivní).
+          </p>
+        )}
 
         <Link href="/subscriptions">
           <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform mt-3">
