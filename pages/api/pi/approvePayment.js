@@ -1,27 +1,24 @@
-// pages/api/pi/approvePayment.js
 import { supabase } from "../../../lib/supabase";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
-  const { paymentId, service } = req.body;
-
-  if (!paymentId || !service) {
-    return res.status(400).json({ error: "Missing paymentId or service data" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    // 🔑 Tady by mělo být volání Pi API k ověření (zkráceně jen mock)
-    console.log("Approve Payment, paymentId:", paymentId);
+    const { paymentId, service } = req.body;
 
-    // Zatím jen uložíme pending platbu do DB
-    const { data: payment, error } = await supabase
+    // testovací UUID (dokud nebude Pi login)
+    const studentId = "11111111-1111-1111-1111-111111111111";
+    const teacherId = "22222222-2222-2222-2222-222222222222";
+
+    const { data, error } = await supabase
       .from("payments")
       .insert([
         {
-          subscription_id: null, // zatím null, vytvoříme až při completion
-          payer_id: "pi-user-placeholder", // později získáme z Pi API
-          payee_id: "22222222-2222-2222-2222-222222222222", // učitel
+          id: paymentId,
+          payer_id: studentId,
+          payee_id: teacherId,
           pi_amount: service.price,
           status: "pending",
         },
@@ -31,9 +28,9 @@ export default async function handler(req, res) {
 
     if (error) throw error;
 
-    res.status(200).json({ ok: true, payment });
+    res.status(200).json({ payment: data });
   } catch (err) {
-    console.error("approvePayment error:", err);
+    console.error("ApprovePayment error:", err);
     res.status(500).json({ error: err.message });
   }
 }
