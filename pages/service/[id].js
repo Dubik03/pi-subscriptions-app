@@ -11,20 +11,16 @@ const services = [
 export default function ServiceDetail() {
   const router = useRouter();
   const { id } = router.query;
-  const service = services.find(s => s.id === parseInt(id));
+  const service = services.find((s) => s.id === parseInt(id));
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [lastPaymentId, setLastPaymentId] = useState(null);
   const [Pi, setPi] = useState(null);
+  const [lastPaymentId, setLastPaymentId] = useState(null);
 
-  // --- Pi SDK init ---
+  // --- Pi SDK init (sandbox) ---
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (window.Pi) {
-      window.Pi.init({ version: "2.0", sandbox: true });
-      setPi(window.Pi);
-    } else {
+    if (typeof window !== "undefined") {
       const script = document.createElement("script");
       script.src = "https://sdk.minepi.com/pi-sdk.js";
       script.async = true;
@@ -38,72 +34,63 @@ export default function ServiceDetail() {
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
-  const handleApprove = async () => {
-    setLoading(true);
-    setMessage("");
-    try {
-      // Simulujeme sandbox platbu
-      const paymentId = crypto.randomUUID();
-      setLastPaymentId(paymentId);
-
-      const res = await fetch("/api/pi/approvePayment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentId, service }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(JSON.stringify(data));
-
-      setMessage(`✅ Payment approved (pending)!\nPayment ID: ${paymentId}`);
-    } catch (err) {
-      setMessage("❌ Approve error: " + err.message);
-    }
-    setLoading(false);
-  };
-
-  const handleComplete = async () => {
-    if (!lastPaymentId) return setMessage("❌ Nejprve proveď approve.");
+  const handleSubscribe = async () => {
+    if (!Pi) return setMessage("❌ Pi SDK není načtený");
 
     setLoading(true);
     setMessage("");
+
     try {
-      const txid = crypto.randomUUID(); // simulujeme TXID
+      const auth = await Pi.authenticate(["payments"]);
+      const user = auth.user || { uid: "sandbox-student-uid" };
 
-      const res = await fetch("/api/pi/completePayment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentId: lastPaymentId, txid }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(JSON.stringify(data));
+      await Pi.createPayment(
+        {
+          amount: service.price,
+          memo: service.name,
+          metadata: {
+            planName: service.name,
+            studentId: user.uid,
+            teacherId: "22222222-2222-2222-2222-222222222222",
+          },
+        },
+        {
+          onReadyForServerApproval: async (payment) => {
+            const paymentId = payment.paymentID;
+            setLastPaymentId(paymentId);
 
-      setMessage(`✅ Payment completed!\nSubscription ID: ${data.subscription.id}\nTXID: ${txid}`);
+            setMessage(`💰 Payment ready for server approval: ${paymentId}`);
+
+            // --- uložíme escrow payment na server ---
+            const res = await fetch("/api/pi/approvePayment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ paymentId, service, studentId: user.uid }),
+            });
+            const data = await res.json();
+            if (data.error) setMessage("Approve error: " + data.error);
+            else setMessage(`✅ Escrow payment created (pending)`);
+          },
+          onReadyForServerCompletion: async (paymentId, txid) => {
+            setMessage(`💳 Completing payment: ${paymentId}, txid: ${txid}`);
+
+            const res = await fetch("/api/pi/completePayment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ paymentId, txid }),
+            });
+            const data = await res.json();
+            if (data.error) setMessage("Complete error: " + data.error);
+            else setMessage(`🎉 Payment completed! Subscription ID: ${data.subscription.id}`);
+          },
+          onCancel: () => setMessage("❌ Payment cancelled by user"),
+          onError: (err) => setMessage("❌ Pi SDK error: " + JSON.stringify(err)),
+        }
+      );
     } catch (err) {
-      setMessage("❌ Complete error: " + err.message);
+      setMessage("❌ Error: " + err.message);
     }
-    setLoading(false);
-  };
 
-  const handleRefund = async () => {
-    if (!lastPaymentId) return setMessage("❌ Nejprve proveď platbu.");
-
-    setLoading(true);
-    setMessage("");
-    try {
-      const refundTxid = crypto.randomUUID(); // simulujeme refund TXID
-
-      const res = await fetch("/api/pi/refundPayment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentId: lastPaymentId, refundTxid }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(JSON.stringify(data));
-
-      setMessage(`💸 Payment refunded!\nRefund TXID: ${refundTxid}`);
-    } catch (err) {
-      setMessage("❌ Refund error: " + err.message);
-    }
     setLoading(false);
   };
 
@@ -115,27 +102,11 @@ export default function ServiceDetail() {
         <p className="whitespace-pre-line mb-6 text-gray-600">{service.description}</p>
 
         <button
-          onClick={handleApprove}
+          onClick={handleSubscribe}
           disabled={loading}
           className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
-          {loading ? "Probíhá..." : "Approve Payment (pending)"}
-        </button>
-
-        <button
-          onClick={handleComplete}
-          disabled={loading || !lastPaymentId}
-          className="px-6 py-2 bg-gradient-to-r from-blue-400 to-indigo-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
-        >
-          {loading ? "Probíhá..." : "Complete Payment & Create Subscription"}
-        </button>
-
-        <button
-          onClick={handleRefund}
-          disabled={loading || !lastPaymentId}
-          className="px-6 py-2 bg-gradient-to-r from-red-400 to-pink-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
-        >
-          {loading ? "Probíhá..." : "Refund Payment"}
+          {loading ? "Probíhá..." : "Subscribe & Pay"}
         </button>
 
         <Link href="/subscriptions">
