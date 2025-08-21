@@ -18,20 +18,18 @@ export default async function handler(req, res) {
     // ------------------------
     const PI_API_KEY = process.env.PI_API_KEY;
     if (!PI_API_KEY) {
-      throw new Error("Missing PI_API_KEY in env");
+      throw new Error("Missing PI_API_KEY in environment variables");
     }
 
-    const response = await fetch("https://api.pi.io/v1/payments/approve", {
+    const approveURL = `https://api.minepi.com/v2/payments/${paymentId}/approve`;
+
+    const response = await fetch(approveURL, {
       method: "POST",
       headers: {
+        "Authorization": `Key ${PI_API_KEY}`,
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${PI_API_KEY}`,
       },
-      body: JSON.stringify({
-        paymentId,
-        amount: service.price,
-        description: `Subscription: ${service.name}`,
-      }),
+      body: null, // Pi API approve endpoint nevyžaduje tělo
     });
 
     if (!response.ok) {
@@ -44,7 +42,7 @@ export default async function handler(req, res) {
     // ------------------------
     // 2️⃣ Uložit do Supabase
     // ------------------------
-    const studentId = "11111111-1111-1111-1111-111111111111"; // placeholder
+    const studentId = "11111111-1111-1111-1111-111111111111"; // placeholder, dej skutečné ID
     const teacherId = "22222222-2222-2222-2222-222222222222"; // placeholder
 
     const { data: payment, error: payError } = await supabase
@@ -55,7 +53,7 @@ export default async function handler(req, res) {
           payer_id: studentId,
           payee_id: teacherId,
           pi_amount: service.price,
-          status: "pending", // zatím approved v Pi, ale u nás pending
+          status: "approved", // protože platba je nyní approved
         },
       ])
       .select()
