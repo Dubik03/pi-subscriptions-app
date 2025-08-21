@@ -3,15 +3,11 @@ import { supabase } from "../../../lib/supabase";
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  try {
-    const { paymentId, service } = req.body;
-    if (!paymentId || !service) {
-      return res.status(400).json({ error: "Missing paymentId or service" });
-    }
+  const { paymentId, service } = req.body;
+  if (!paymentId || !service) return res.status(400).json({ error: "Missing paymentId or service" });
 
-    // 🔑 API key z .env
+  try {
     const PI_API_KEY = process.env.PI_API_KEY;
-    if (!PI_API_KEY) throw new Error("Missing PI_API_KEY in environment");
 
     // 1️⃣ Zavoláme Pi API /approve
     const approveRes = await fetch(`https://api.minepi.com/v2/payments/${paymentId}/approve`, {
@@ -28,19 +24,21 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: approveData.error || "Pi approve failed" });
     }
 
-    // 2️⃣ Uložíme do Supabase
+    // 2️⃣ Uložíme pending platbu do tabulky
     const studentId = "11111111-1111-1111-1111-111111111111";
     const teacherId = "22222222-2222-2222-2222-222222222222";
 
     const { data, error } = await supabase
       .from("payments")
-      .insert([{
-        pi_payment_id: paymentId, // Pi paymentID jako text
-        payer_id: studentId,
-        payee_id: teacherId,
-        pi_amount: service?.price || approveData.amount,
-        status: "pending",
-      }])
+      .insert([
+        {
+          id: paymentId,
+          payer_id: studentId,
+          payee_id: teacherId,
+          pi_amount: service.price,
+          status: "pending",
+        },
+      ])
       .select()
       .single();
 
