@@ -1,71 +1,36 @@
-// pages/api/pi/approvePayment.js
-import { supabase } from "../../../lib/supabase";
+import axios from "axios";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { paymentId, service } = req.body;
-
-  if (!paymentId || !service) {
-    return res.status(400).json({ error: "Missing paymentId or service" });
-  }
+  const { paymentId } = req.body;
+  if (!paymentId) return res.status(400).json({ error: "Missing paymentId" });
 
   try {
-    // ------------------------
-    // 1️⃣ Volání Pi API pro approval
-    // ------------------------
-    const PI_API_KEY = process.env.PI_API_KEY;
-    if (!PI_API_KEY) {
-      throw new Error("Missing PI_API_KEY in env");
-    }
+    const API_KEY = process.env.PI_API_KEY; // musí být v env
+    const postingURL = `https://api.minepi.com/v2/payments/${paymentId}/approve`;
 
-    const response = await fetch("https://api.pi.io/v1/payments/approve", {
-      method: "POST",
+    const headers = {
       headers: {
+        Authorization: `key ${API_KEY}`,
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${PI_API_KEY}`,
       },
-      body: JSON.stringify({
-        paymentId,
-        amount: service.price,
-        description: `Subscription: ${service.name}`,
-      }),
-    });
+    };
 
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Pi API error: ${response.status} ${errText}`);
-    }
+    // call Pi API
+    const { data: paymentDTO } = await axios.post(postingURL, null, headers);
 
-    const piData = await response.json();
+    console.log("Payment approved:", paymentDTO);
 
-    // ------------------------
-    // 2️⃣ Uložit do Supabase
-    // ------------------------
-    const studentId = "11111111-1111-1111-1111-111111111111"; // placeholder
-    const teacherId = "22222222-2222-2222-2222-222222222222"; // placeholder
+    // volitelně ulož do Supabase
+    // const { data, error } = await supabase
+    //   .from("payments")
+    //   .update({ status: "approved" })
+    //   .eq("id", paymentId);
 
-    const { data: payment, error: payError } = await supabase
-      .from("payments")
-      .insert([
-        {
-          id: paymentId,
-          payer_id: studentId,
-          payee_id: teacherId,
-          pi_amount: service.price,
-          status: "pending", // zatím approved v Pi, ale u nás pending
-        },
-      ])
-      .select()
-      .single();
-
-    if (payError) throw payError;
-
-    res.status(200).json({ ok: true, piData, payment });
+    res.status(200).json({ ok: true, paymentDTO });
   } catch (err) {
-    console.error("ApprovePayment error:", err);
-    res.status(500).json({ error: err.message });
+    console.error("approvePayment error:", err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data || err.message });
   }
 }
