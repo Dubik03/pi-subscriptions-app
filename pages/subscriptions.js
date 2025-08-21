@@ -10,7 +10,7 @@ export default function MySubscriptions() {
       const { data, error } = await supabase
         .from('subscriptions')
         .select('id, plan_name, pi_amount, end_date')
-        .eq('user_id', 'uuid-studenta'); // aktuální uživatel
+        .eq('user_id', '11111111-1111-1111-1111-111111111111'); // aktuální uživatel
       if (!error) setSubscriptions(data);
       setLoading(false);
     };
