@@ -13,54 +13,37 @@ export default function ServiceDetail() {
   const router = useRouter();
   const { id } = router.query;
   const service = services.find((s) => s.id === parseInt(id));
-
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [lastPaymentId, setLastPaymentId] = useState(null);
-  const [piLoaded, setPiLoaded] = useState(false);
+  const [Pi, setPi] = useState(null);
 
-  // --------------------------
-  // Dynamické načtení Pi SDK
-  // --------------------------
+  // --- Pi SDK init (sandbox always) ---
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const script = document.createElement("script");
-    script.src = "https://sdk.minepi.com/pi-sdk.js";
-    script.async = true;
-
-    script.onload = () => {
-      try {
-        const isLocal = window.location.hostname === "localhost";
-        window.Pi.init({
-          version: "2.0",
-          sandbox: isLocal, // sandbox jen na localhostu
-        });
-        console.log("✅ Pi SDK loaded");
-        setPiLoaded(true);
-      } catch (err) {
-        console.error("❌ Pi SDK initialization error:", err);
-        setMessage("❌ Nepodařilo se inicializovat Pi SDK");
-      }
-    };
-
-    script.onerror = () => {
-      console.error("❌ Pi SDK failed to load");
-      setMessage("❌ Nepodařilo se načíst Pi SDK");
-    };
-
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
+    if (typeof window !== "undefined") {
+      const initPi = () => {
+        if (window.Pi) {
+          window.Pi.init({ version: "2.0", sandbox: true });
+          setPi(window.Pi);
+        } else {
+          const script = document.createElement("script");
+          script.src = "https://sdk.minepi.com/pi-sdk.js";
+          script.async = true;
+          script.onload = () => {
+            window.Pi.init({ version: "2.0", sandbox: true });
+            setPi(window.Pi);
+          };
+          document.body.appendChild(script);
+        }
+      };
+      initPi();
+    }
   }, []);
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
-  const handlePiApproveComplete = async () => {
-    if (!piLoaded || !window.Pi || !window.Pi.payments) {
-      setMessage("❌ Pi SDK není načtený.");
+  const handleSubscribe = async () => {
+    if (!Pi) {
+      setMessage("Pi SDK not loaded yet");
       return;
     }
 
@@ -68,81 +51,53 @@ export default function ServiceDetail() {
     setMessage("");
 
     try {
-      window.Pi.payments.requestPayment({
-        productId: service.id,
-        amount: service.price,
-        onReadyForServerApproval: async (payment) => {
-          const paymentId = payment.paymentID;
-          setLastPaymentId(paymentId);
+      // --- authenticate user (sandbox) ---
+      const auth = await Pi.authenticate(["payments"]);
+      const user = auth.user || { uid: "test-student-uid" };
 
-          try {
-            // 1️⃣ Approve payment na serveru
-            const approveRes = await fetch("/api/pi/approvePayment", {
+      // --- create sandbox payment ---
+      await Pi.createPayment(
+        {
+          amount: service.price,
+          memo: service.name,
+          metadata: {
+            planName: service.name,
+            studentId: user.uid,
+            teacherId: "22222222-2222-2222-2222-222222222222",
+          },
+        },
+        {
+          onReadyForServerApproval: async (paymentId) => {
+            setMessage(`Payment ready for approval (sandbox): ${paymentId}`);
+            const res = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ paymentId, service }),
             });
-            const approveData = await approveRes.json();
-            if (!approveRes.ok) throw new Error(JSON.stringify(approveData));
-
-            // 2️⃣ Complete payment na serveru
-            const completeRes = await fetch("/api/pi/completePayment", {
+            const data = await res.json();
+            if (data.error) setMessage("Approve error: " + data.error);
+            else setMessage(`Payment approved on backend (sandbox)!`);
+          },
+          onReadyForServerCompletion: async (paymentId, txid) => {
+            setMessage(`Completing payment (sandbox): ${paymentId}, txid: ${txid}`);
+            const res = await fetch("/api/pi/completePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId }),
+              body: JSON.stringify({ paymentId, txid }),
             });
-            const completeData = await completeRes.json();
-            if (!completeRes.ok) throw new Error(JSON.stringify(completeData));
-
-            setMessage(
-              `✅ Payment approved & completed!\nPayment ID: ${paymentId}\nSubscription ID: ${completeData.subscription.id}`
-            );
-          } catch (err) {
-            console.error("Server error:", err);
-            setMessage("❌ Chyba serveru: " + err.message);
-          } finally {
-            setLoading(false);
-          }
-        },
-        onCancel: () => {
-          setMessage("❌ Platba zrušena uživatelem.");
-          setLoading(false);
-        },
-        onError: (err) => {
-          console.error("Pi SDK error:", err);
-          setMessage("❌ Chyba Pi SDK: " + JSON.stringify(err));
-          setLoading(false);
-        },
-      });
+            const data = await res.json();
+            if (data.error) setMessage("Complete error: " + data.error);
+            else setMessage(`Payment completed! Subscription ID: ${data.subscription.id}`);
+          },
+          onCancel: () => setMessage("Payment canceled by user"),
+          onError: (err) => setMessage("Payment error: " + err.message),
+        }
+      );
     } catch (err) {
-      console.error("Unhandled error:", err);
-      setMessage("❌ Neočekávaná chyba: " + err.message);
-      setLoading(false);
+      setMessage("Error: " + err.message);
     }
-  };
 
-  const handlePiRefund = async () => {
-    if (!lastPaymentId) return setMessage("❌ Nejprve proveď platbu.");
-
-    setLoading(true);
-    setMessage("");
-
-    try {
-      const refundRes = await fetch("/api/pi/refundPayment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentId: lastPaymentId }),
-      });
-      const refundData = await refundRes.json();
-      if (!refundRes.ok) throw new Error(JSON.stringify(refundData));
-
-      setMessage(`💸 Payment refunded!\nSubscription deaktivována.`);
-    } catch (err) {
-      console.error("Refund error:", err);
-      setMessage("❌ Chyba refundu: " + err.message);
-    } finally {
-      setLoading(false);
-    }
+    setLoading(false);
   };
 
   return (
@@ -153,20 +108,16 @@ export default function ServiceDetail() {
         <p className="whitespace-pre-line mb-6 text-gray-600">{service.description}</p>
 
         <button
-          onClick={handlePiApproveComplete}
-          disabled={loading || !piLoaded}
+          onClick={handleSubscribe}
+          disabled={loading}
           className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
-          {loading ? "Probíhá..." : "Subscribe & Pay (Pi SDK)"}
+          {loading ? "Probíhá..." : "Subscribe Now"}
         </button>
 
-        <button
-          onClick={handlePiRefund}
-          disabled={loading || !lastPaymentId}
-          className="px-6 py-2 bg-gradient-to-r from-red-400 to-pink-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
-        >
-          {loading ? "Probíhá..." : "Refund Payment"}
-        </button>
+        <p className="mt-3 text-yellow-700">
+          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči (Chrome, Firefox).
+        </p>
 
         <Link href="/subscriptions">
           <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform mt-3">
