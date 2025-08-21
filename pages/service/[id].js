@@ -17,7 +17,6 @@ export default function ServiceDetail() {
   const [message, setMessage] = useState("");
   const [Pi, setPi] = useState(null);
 
-  // --- Pi SDK init (sandbox always) ---
   useEffect(() => {
     if (typeof window !== "undefined") {
       const initPi = () => {
@@ -51,11 +50,9 @@ export default function ServiceDetail() {
     setMessage("");
 
     try {
-      // --- authenticate user (sandbox) ---
       const auth = await Pi.authenticate(["payments"]);
       const user = auth.user || { uid: "test-student-uid" };
 
-      // --- create sandbox payment ---
       await Pi.createPayment(
         {
           amount: service.price,
@@ -68,22 +65,28 @@ export default function ServiceDetail() {
         },
         {
           onReadyForServerApproval: async (paymentId) => {
-            setMessage(`Payment ready for approval (sandbox): ${paymentId}`);
+            // pokud sandbox a paymentId chybí, vytvoř testovací
+            const finalPaymentId = paymentId || `sandbox-${Date.now()}`;
+            setMessage(`Payment ready for approval: ${finalPaymentId}`);
+
+            // Uložíme platbu do Supabase
             const res = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId, service }),
+              body: JSON.stringify({ paymentId: finalPaymentId, service, studentId: user.uid }),
             });
             const data = await res.json();
             if (data.error) setMessage("Approve error: " + data.error);
-            else setMessage(`Payment approved on backend (sandbox)!`);
+            else setMessage(`Payment approved and stored! Payment ID: ${finalPaymentId}`);
           },
           onReadyForServerCompletion: async (paymentId, txid) => {
-            setMessage(`Completing payment (sandbox): ${paymentId}, txid: ${txid}`);
+            const finalPaymentId = paymentId || `sandbox-${Date.now()}`;
+            setMessage(`Completing payment: ${finalPaymentId}, txid: ${txid}`);
+
             const res = await fetch("/api/pi/completePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId, txid }),
+              body: JSON.stringify({ paymentId: finalPaymentId, txid }),
             });
             const data = await res.json();
             if (data.error) setMessage("Complete error: " + data.error);
@@ -116,7 +119,7 @@ export default function ServiceDetail() {
         </button>
 
         <p className="mt-3 text-yellow-700">
-          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči (Chrome, Firefox).
+          ⚠️ Sandbox aktivní v běžném prohlížeči. Skutečné transakce v Pi Browseru uloží platbu stejně.
         </p>
 
         <Link href="/subscriptions">
