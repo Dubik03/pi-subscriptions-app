@@ -40,7 +40,6 @@ export default function ServiceDetail() {
     setLoading(false);
   };
 
-  // Nové tlačítko pro Pi SDK mock
   const handlePiMock = async () => {
     setLoading(true);
     setMessage("");
@@ -74,6 +73,28 @@ export default function ServiceDetail() {
     setLoading(false);
   };
 
+  // Nové tlačítko pro refund
+  const handleRefund = async () => {
+    setLoading(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/pi/refundPayment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paymentId: "11111111-1111-1111-1111-111111111111", // testovací paymentId
+          refundTxid: "fake-refund-789"
+        }),
+      });
+      const data = await res.json();
+      if (data.error) setMessage("Chyba: " + data.error);
+      else setMessage(`✅ Payment refunded!\nStatus: ${data.payment.status}`);
+    } catch (err) {
+      setMessage("Chyba: " + err.message);
+    }
+    setLoading(false);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-blue-50 p-6">
       <div className="max-w-xl mx-auto bg-white p-6 rounded-2xl shadow-lg">
@@ -95,6 +116,14 @@ export default function ServiceDetail() {
           className="px-6 py-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
           {loading ? "Probíhá..." : "Pi SDK Mock"}
+        </button>
+
+        <button
+          onClick={handleRefund}
+          disabled={loading}
+          className="px-6 py-2 bg-gradient-to-r from-red-400 to-pink-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
+        >
+          {loading ? "Probíhá..." : "Refund Payment"}
         </button>
 
         <Link href="/subscriptions">
