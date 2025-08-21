@@ -25,8 +25,8 @@ export default function ServiceDetail() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          studentId: "uuid-studenta",
-          teacherId: "uuid-učitele",
+          studentId: "11111111-1111-1111-1111-111111111111",
+          teacherId: "22222222-2222-2222-2222-222222222222",
           planName: service.name,
           piAmount: service.price,
           durationDays: 30
