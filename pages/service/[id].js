@@ -1,19 +1,19 @@
-import { useState } from 'react';
-import { useRouter } from 'next/router';
-import Link from 'next/link';
+import { useState } from "react";
+import { useRouter } from "next/router";
 
 const services = [
-  { id: 1, name: 'Fitness Klub Praha', price: 2, description: '✔️ Přístup do posilovny\n✔️ Online rezervace\n✔️ Členství ve skupině' },
-  { id: 2, name: 'Online English Tutor', price: 1.5, description: '✔️ Online lekce\n✔️ Přístup k materiálům\n✔️ Individuální feedback' },
-  { id: 3, name: 'Crypto News Portal', price: 0.5, description: '✔️ Přístup k exkluzivnímu obsahu\n✔️ Týdenní analýzy\n✔️ Premium newsletter' },
+  { id: 1, name: "Fitness Klub Praha", price: 2 },
+  { id: 2, name: "Online English Tutor", price: 1.5 },
+  { id: 3, name: "Crypto News Portal", price: 0.5 },
 ];
 
 export default function ServiceDetail() {
   const router = useRouter();
   const { id } = router.query;
-  const service = services.find(s => s.id === parseInt(id));
+  const service = services.find((s) => s.id === parseInt(id));
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [paymentId, setPaymentId] = useState(null);
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
@@ -21,7 +21,7 @@ export default function ServiceDetail() {
     setLoading(true);
     setMessage("");
     try {
-      const response = await fetch("/api/createSubscription", {
+      const res = await fetch("/api/createSubscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -29,16 +29,54 @@ export default function ServiceDetail() {
           teacherId: "22222222-2222-2222-2222-222222222222",
           planName: service.name,
           piAmount: service.price,
-          durationDays: 30
+          durationDays: 30,
         }),
       });
-
-      const data = await response.json();
+      const data = await res.json();
       if (data.error) {
         setMessage("Chyba: " + data.error);
       } else {
-        setMessage(`Subscription vytvořeno! Escrow platba čeká: ${data.payment.id}`);
+        setPaymentId(data.payment.id);
+        setMessage(`Subscribed! Payment ID: ${data.payment.id}`);
       }
+    } catch (err) {
+      setMessage("Chyba: " + err.message);
+    }
+    setLoading(false);
+  };
+
+  const handleApprove = async () => {
+    if (!paymentId) return setMessage("Nejdříve vytvoř platbu.");
+    setLoading(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/pi/approvePayment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId, service }),
+      });
+      const data = await res.json();
+      if (data.error) setMessage("Chyba: " + data.error);
+      else setMessage(`Payment approved! Status: ${data.payment.status}`);
+    } catch (err) {
+      setMessage("Chyba: " + err.message);
+    }
+    setLoading(false);
+  };
+
+  const handleComplete = async () => {
+    if (!paymentId) return setMessage("Nejdříve vytvoř platbu.");
+    setLoading(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/pi/completePayment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId, txid: "fake-txid-456" }),
+      });
+      const data = await res.json();
+      if (data.error) setMessage("Chyba: " + data.error);
+      else setMessage(`Payment completed! TXID: ${data.payment.txid}`);
     } catch (err) {
       setMessage("Chyba: " + err.message);
     }
@@ -50,21 +88,20 @@ export default function ServiceDetail() {
       <div className="max-w-xl mx-auto bg-white p-6 rounded-2xl shadow-lg">
         <h1 className="text-3xl font-bold mb-4 text-blue-700">{service.name}</h1>
         <p className="text-gray-700 mb-2">{service.price} Pi / měsíc</p>
-        <p className="whitespace-pre-line mb-6 text-gray-600">{service.description}</p>
 
-        <button
-          onClick={handleSubscribe}
-          disabled={loading}
-          className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
-        >
-          {loading ? "Probíhá..." : "Subscribe Now"}
-        </button>
+        <div className="flex gap-3 mb-4">
+          <button onClick={handleSubscribe} disabled={loading} className="px-4 py-2 bg-green-500 text-white rounded-xl hover:scale-105 transform transition-transform">
+            {loading ? "Probíhá..." : "Subscribe"}
+          </button>
+          <button onClick={handleApprove} disabled={loading} className="px-4 py-2 bg-yellow-400 text-white rounded-xl hover:scale-105 transform transition-transform">
+            Approve
+          </button>
+          <button onClick={handleComplete} disabled={loading} className="px-4 py-2 bg-blue-500 text-white rounded-xl hover:scale-105 transform transition-transform">
+            Complete
+          </button>
+        </div>
 
-        <Link href="/subscriptions">
-          <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform">My Subscriptions</button>
-        </Link>
-
-        {message && <p className="mt-4 text-blue-700">{message}</p>}
+        {message && <p className="mt-2 text-blue-700">{message}</p>}
       </div>
     </div>
   );
