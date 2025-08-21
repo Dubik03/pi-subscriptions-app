@@ -1,19 +1,19 @@
-import { useState } from "react";
-import { useRouter } from "next/router";
+import { useState } from 'react';
+import { useRouter } from 'next/router';
+import Link from 'next/link';
 
 const services = [
-  { id: 1, name: "Fitness Klub Praha", price: 2 },
-  { id: 2, name: "Online English Tutor", price: 1.5 },
-  { id: 3, name: "Crypto News Portal", price: 0.5 },
+  { id: 1, name: 'Fitness Klub Praha', price: 2, description: '✔️ Přístup do posilovny\n✔️ Online rezervace\n✔️ Členství ve skupině' },
+  { id: 2, name: 'Online English Tutor', price: 1.5, description: '✔️ Online lekce\n✔️ Přístup k materiálům\n✔️ Individuální feedback' },
+  { id: 3, name: 'Crypto News Portal', price: 0.5, description: '✔️ Přístup k exkluzivnímu obsahu\n✔️ Týdenní analýzy\n✔️ Premium newsletter' },
 ];
 
 export default function ServiceDetail() {
   const router = useRouter();
   const { id } = router.query;
-  const service = services.find((s) => s.id === parseInt(id));
+  const service = services.find(s => s.id === parseInt(id));
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [paymentId, setPaymentId] = useState(null);
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
@@ -25,58 +25,49 @@ export default function ServiceDetail() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          studentId: "11111111-1111-1111-1111-111111111111",
-          teacherId: "22222222-2222-2222-2222-222222222222",
+          studentId: "uuid-studenta",
+          teacherId: "uuid-učitele",
           planName: service.name,
           piAmount: service.price,
-          durationDays: 30,
+          durationDays: 30
         }),
       });
       const data = await res.json();
-      if (data.error) {
-        setMessage("Chyba: " + data.error);
-      } else {
-        setPaymentId(data.payment.id);
-        setMessage(`Subscribed! Payment ID: ${data.payment.id}`);
-      }
+      setMessage(`Subscription vytvořeno! Escrow platba čeká: ${data.payment.id}`);
     } catch (err) {
       setMessage("Chyba: " + err.message);
     }
     setLoading(false);
   };
 
-  const handleApprove = async () => {
-    if (!paymentId) return setMessage("Nejdříve vytvoř platbu.");
+  // Nové tlačítko pro Pi SDK mock
+  const handlePiMock = async () => {
     setLoading(true);
     setMessage("");
     try {
-      const res = await fetch("/api/pi/approvePayment", {
+      // 1. Approve payment
+      const approveRes = await fetch("/api/pi/approvePayment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentId, service }),
+        body: JSON.stringify({
+          paymentId: "11111111-1111-1111-1111-111111111111",
+          service
+        }),
       });
-      const data = await res.json();
-      if (data.error) setMessage("Chyba: " + data.error);
-      else setMessage(`Payment approved! Status: ${data.payment.status}`);
-    } catch (err) {
-      setMessage("Chyba: " + err.message);
-    }
-    setLoading(false);
-  };
+      const approveData = await approveRes.json();
 
-  const handleComplete = async () => {
-    if (!paymentId) return setMessage("Nejdříve vytvoř platbu.");
-    setLoading(true);
-    setMessage("");
-    try {
-      const res = await fetch("/api/pi/completePayment", {
+      // 2. Complete payment
+      const completeRes = await fetch("/api/pi/completePayment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentId, txid: "fake-txid-456" }),
+        body: JSON.stringify({
+          paymentId: "11111111-1111-1111-1111-111111111111",
+          txid: "fake-txid-456"
+        }),
       });
-      const data = await res.json();
-      if (data.error) setMessage("Chyba: " + data.error);
-      else setMessage(`Payment completed! TXID: ${data.payment.txid}`);
+      const completeData = await completeRes.json();
+
+      setMessage(`✅ Mock Pi SDK complete!\nApprove: ${JSON.stringify(approveData)}\nComplete: ${JSON.stringify(completeData)}`);
     } catch (err) {
       setMessage("Chyba: " + err.message);
     }
@@ -88,20 +79,29 @@ export default function ServiceDetail() {
       <div className="max-w-xl mx-auto bg-white p-6 rounded-2xl shadow-lg">
         <h1 className="text-3xl font-bold mb-4 text-blue-700">{service.name}</h1>
         <p className="text-gray-700 mb-2">{service.price} Pi / měsíc</p>
+        <p className="whitespace-pre-line mb-6 text-gray-600">{service.description}</p>
 
-        <div className="flex gap-3 mb-4">
-          <button onClick={handleSubscribe} disabled={loading} className="px-4 py-2 bg-green-500 text-white rounded-xl hover:scale-105 transform transition-transform">
-            {loading ? "Probíhá..." : "Subscribe"}
-          </button>
-          <button onClick={handleApprove} disabled={loading} className="px-4 py-2 bg-yellow-400 text-white rounded-xl hover:scale-105 transform transition-transform">
-            Approve
-          </button>
-          <button onClick={handleComplete} disabled={loading} className="px-4 py-2 bg-blue-500 text-white rounded-xl hover:scale-105 transform transition-transform">
-            Complete
-          </button>
-        </div>
+        <button
+          onClick={handleSubscribe}
+          disabled={loading}
+          className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
+        >
+          {loading ? "Probíhá..." : "Subscribe Now"}
+        </button>
 
-        {message && <p className="mt-2 text-blue-700">{message}</p>}
+        <button
+          onClick={handlePiMock}
+          disabled={loading}
+          className="px-6 py-2 bg-gradient-to-r from-yellow-400 to-orange-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
+        >
+          {loading ? "Probíhá..." : "Pi SDK Mock"}
+        </button>
+
+        <Link href="/subscriptions">
+          <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform">My Subscriptions</button>
+        </Link>
+
+        {message && <pre className="mt-4 text-blue-700 whitespace-pre-wrap">{message}</pre>}
       </div>
     </div>
   );
