@@ -1,22 +1,18 @@
-// pages/api/pi/approvePayment.js
 import { supabase } from "../../../lib/supabase";
-import crypto from "crypto";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { paymentId, service, student, teacher } = req.body;
-    if (!paymentId || !service) {
-      return res.status(400).json({ error: "Missing paymentId or service" });
+    const { paymentId, service, studentWallet, studentUsername, studentEmail, teacherWallet, teacherUsername, teacherEmail } = req.body;
+
+    if (!paymentId || !studentWallet || !teacherWallet) {
+      return res.status(400).json({ error: "Missing paymentId or wallet addresses" });
     }
 
     const PI_API_KEY = process.env.PI_API_KEY;
-    if (!PI_API_KEY) throw new Error("Missing PI_API_KEY in environment variables");
 
-    // 1️⃣ Volání Pi API /approve
+    // 1️⃣ Zavolat Pi API /approve
     const approveRes = await fetch(`https://api.minepi.com/v2/payments/${paymentId}/approve`, {
       method: "POST",
       headers: {
@@ -26,76 +22,61 @@ export default async function handler(req, res) {
     });
 
     const approveData = await approveRes.json();
-    if (!approveRes.ok) {
-      console.error("Pi API Approve error:", approveData);
-      return res.status(400).json({ error: approveData.error || "Pi approve failed" });
-    }
+    if (!approveRes.ok) return res.status(400).json({ error: approveData.error || "Pi approve failed" });
 
-    // 2️⃣ Vytvoření / kontrola uživatele student
-    let { data: existingStudent } = await supabase
+    // 2️⃣ Ujistíme se, že student existuje
+    let { data: student, error: studentError } = await supabase
       .from("users")
       .select("*")
-      .eq("pi_wallet_address", student?.walletAddress || `sandbox_${crypto.randomUUID()}`)
+      .eq("pi_wallet_address", studentWallet)
       .single();
 
-    if (!existingStudent) {
-      const walletAddress = student?.walletAddress || `sandbox_${crypto.randomUUID()}`;
-      const { data: newStudent, error: insertStudentError } = await supabase
+    if (!student) {
+      const { data: newStudent, error: insertErr } = await supabase
         .from("users")
-        .insert([{
-          pi_wallet_address: walletAddress,
-          username: student?.username || `Student_${walletAddress.substring(0, 6)}`,
-          role: "student",
-        }])
+        .insert([{ pi_wallet_address: studentWallet, username: studentUsername || "Student", email: studentEmail, role: "student" }])
         .select()
         .single();
-
-      if (insertStudentError) throw new Error("Failed to insert student: " + insertStudentError.message);
-      existingStudent = newStudent;
+      if (insertErr) throw new Error("Failed to insert student: " + insertErr.message);
+      student = newStudent;
     }
 
-    // 3️⃣ Vytvoření / kontrola učitele
-    let { data: existingTeacher } = await supabase
+    // 3️⃣ Ujistíme se, že učitel existuje
+    let { data: teacher, error: teacherError } = await supabase
       .from("users")
       .select("*")
-      .eq("pi_wallet_address", teacher?.walletAddress || `teacher_sandbox_${crypto.randomUUID()}`)
+      .eq("pi_wallet_address", teacherWallet)
       .single();
 
-    if (!existingTeacher) {
-      const walletAddress = teacher?.walletAddress || `teacher_sandbox_${crypto.randomUUID()}`;
-      const { data: newTeacher, error: insertTeacherError } = await supabase
+    if (!teacher) {
+      const { data: newTeacher, error: insertErr } = await supabase
         .from("users")
-        .insert([{
-          pi_wallet_address: walletAddress,
-          username: teacher?.username || `Teacher_${walletAddress.substring(0, 6)}`,
-          role: "teacher",
-        }])
+        .insert([{ pi_wallet_address: teacherWallet, username: teacherUsername || "Teacher", email: teacherEmail, role: "teacher" }])
         .select()
         .single();
-
-      if (insertTeacherError) throw new Error("Failed to insert teacher: " + insertTeacherError.message);
-      existingTeacher = newTeacher;
+      if (insertErr) throw new Error("Failed to insert teacher: " + insertErr.message);
+      teacher = newTeacher;
     }
 
-    // 4️⃣ Vložení platby do payments
-    const { data: payment, error: paymentError } = await supabase
+    // 4️⃣ Uložíme platbu do Supabase
+    const { data: payment, error: payError } = await supabase
       .from("payments")
       .insert([{
         id: paymentId,
-        payer_id: existingStudent.id,
-        payee_id: existingTeacher.id,
+        payer_id: student.id,
+        payee_id: teacher.id,
         pi_amount: service?.price || approveData.amount,
         status: "pending",
       }])
       .select()
       .single();
 
-    if (paymentError) throw new Error("Failed to insert payment: " + paymentError.message);
+    if (payError) throw new Error("Failed to insert payment: " + payError.message);
 
-    res.status(200).json({ ok: true, payment, pi: approveData });
+    res.status(200).json({ payment, pi: approveData });
 
   } catch (err) {
-    console.error("approvePayment error:", err);
+    console.error("ApprovePayment error:", err);
     res.status(500).json({ error: err.message });
   }
 }
