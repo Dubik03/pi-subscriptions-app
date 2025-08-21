@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import Script from "next/script";
 
 const services = [
   { id: 1, name: "Fitness Klub Praha", price: 2, description: "✔️ Přístup do posilovny\n✔️ Online rezervace\n✔️ Členství ve skupině" },
@@ -18,12 +17,32 @@ export default function ServiceDetail() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [lastPaymentId, setLastPaymentId] = useState(null);
-  const [sdkLoaded, setSdkLoaded] = useState(false);
+  const [piLoaded, setPiLoaded] = useState(false);
+
+  useEffect(() => {
+    // Dynamicky načteme Pi SDK jen na klientu
+    const script = document.createElement("script");
+    script.src = "https://sdk.minepi.com/pi-sdk.js";
+    script.onload = () => {
+      window.Pi?.init({ version: "2.0" }); // produkční mód na Vercelu
+      setPiLoaded(true);
+      console.log("✅ Pi SDK loaded (production)");
+    };
+    script.onerror = () => {
+      console.error("❌ Pi SDK failed to load");
+      setMessage("❌ Nepodařilo se načíst Pi SDK");
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
 
   if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
   const handlePiApproveComplete = async () => {
-    if (!sdkLoaded || !window.Pi || !window.Pi.payments) {
+    if (!window.Pi || !window.Pi.payments) {
       setMessage("❌ Pi SDK není načtený.");
       return;
     }
@@ -111,18 +130,6 @@ export default function ServiceDetail() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-blue-50 p-6">
-      {/* Pi SDK */}
-      <Script
-        src="https://sdk.minepi.com/pi-sdk.js"
-        strategy="afterInteractive"
-        onLoad={() => {
-          window.Pi.init({ version: "2.0", sandbox: true });
-          setSdkLoaded(true);
-          console.log("✅ Pi SDK loaded");
-        }}
-        onError={() => setMessage("❌ Nepodařilo se načíst Pi SDK")}
-      />
-
       <div className="max-w-xl mx-auto bg-white p-6 rounded-2xl shadow-lg">
         <h1 className="text-3xl font-bold mb-4 text-blue-700">{service.name}</h1>
         <p className="text-gray-700 mb-2">{service.price} Pi / měsíc</p>
@@ -130,7 +137,7 @@ export default function ServiceDetail() {
 
         <button
           onClick={handlePiApproveComplete}
-          disabled={loading || !sdkLoaded}
+          disabled={loading || !piLoaded}
           className="px-6 py-2 bg-gradient-to-r from-green-400 to-blue-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
         >
           {loading ? "Probíhá..." : "Subscribe & Pay (Pi SDK)"}
