@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { v4 as uuidv4 } from "uuid";
 
 const services = [
   { id: 1, name: "Fitness Klub Praha", price: 2, description: "✔️ Přístup do posilovny\n✔️ Online rezervace\n✔️ Členství ve skupině" },
@@ -51,25 +50,22 @@ export default function ServiceDetail() {
     setMessage("");
 
     try {
-      // --- authenticate user ---
       const auth = await Pi.authenticate(["payments"]);
-      const piUser = auth.user || { uid: "sandbox-" + Date.now(), username: "Sandbox User", walletAddress: "" };
+      const piUser = auth.user;
 
-      // --- sync user to Supabase ---
       const userRes = await fetch("/api/pi/syncUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          pi_uid: piUser.uid,
+          uid: piUser.uid,
           username: piUser.username,
-          wallet_address: piUser.walletAddress || "",
+          wallet: piUser.walletAddress,
         }),
       });
       const userData = await userRes.json();
       if (userData.error) throw new Error(userData.error);
-      const userId = userData.id; // UUID uživatele
+      const userId = userData.id;
 
-      // --- create payment ---
       await Pi.createPayment(
         {
           amount: service.price,
@@ -82,27 +78,22 @@ export default function ServiceDetail() {
         },
         {
           onReadyForServerApproval: async (paymentId) => {
-            // pokud není validní UUID → fallback
-            const finalPaymentId = /^[0-9a-fA-F-]{32,36}$/.test(paymentId) ? paymentId : uuidv4();
-            setMessage(`Payment ready for approval: ${finalPaymentId}`);
-
+            setMessage(`Payment ready for approval: ${paymentId}`);
             const res = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId: finalPaymentId, service, studentId: userId }),
+              body: JSON.stringify({ paymentId, service, studentId: userId }),
             });
             const data = await res.json();
             if (data.error) setMessage("Approve error: " + data.error);
-            else setMessage(`Payment approved and stored! Payment ID: ${finalPaymentId}`);
+            else setMessage(`Payment approved and stored! Payment ID: ${paymentId}`);
           },
           onReadyForServerCompletion: async (paymentId, txid) => {
-            const finalPaymentId = /^[0-9a-fA-F-]{32,36}$/.test(paymentId) ? paymentId : uuidv4();
-            setMessage(`Completing payment: ${finalPaymentId}, txid: ${txid}`);
-
+            setMessage(`Completing payment: ${paymentId}, txid: ${txid}`);
             const res = await fetch("/api/pi/completePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId: finalPaymentId, txid }),
+              body: JSON.stringify({ paymentId, txid }),
             });
             const data = await res.json();
             if (data.error) setMessage("Complete error: " + data.error);
@@ -135,7 +126,7 @@ export default function ServiceDetail() {
         </button>
 
         <p className="mt-3 text-yellow-700">
-          ⚠️ Sandbox režim je aktivní – test v běžném prohlížeči. Reálné transakce v Pi Browseru se uloží stejně.
+          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči (Chrome, Firefox).
         </p>
 
         <Link href="/subscriptions">
