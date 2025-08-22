@@ -69,6 +69,7 @@ export default async function handler(req, res) {
           plan_name: planName || "Pi subscription",
           pi_amount: completeData.amount,
           end_date: endDate.toISOString().split("T")[0],
+          status: "pending", // ❗ vytvoříme s pending
         },
       ])
       .select()
