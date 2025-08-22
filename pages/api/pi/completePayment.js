@@ -13,8 +13,12 @@ export default async function handler(req, res) {
 
   try {
     const PI_API_KEY = process.env.PI_API_KEY;
+    if (!PI_API_KEY) throw new Error("Missing PI_API_KEY in environment");
+
+    console.log("✅ Starting completePayment for paymentId:", paymentId);
 
     // 1️⃣ Zavoláme Pi API /complete
+    console.log("🌐 Calling Pi API /complete with txid:", txid);
     const completeRes = await fetch(
       `https://api.minepi.com/v2/payments/${paymentId}/complete`,
       {
@@ -28,8 +32,10 @@ export default async function handler(req, res) {
     );
 
     const completeData = await completeRes.json();
+    console.log("📥 Pi API /complete response:", completeData);
+
     if (!completeRes.ok) {
-      console.error("Pi API Complete error:", completeData);
+      console.error("❌ Pi API Complete error:", completeData);
       return res
         .status(400)
         .json({ error: completeData.error || "Pi complete failed" });
@@ -39,6 +45,7 @@ export default async function handler(req, res) {
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 30);
 
+    console.log("📝 Creating subscription in Supabase...");
     const { data: subscription, error: subError } = await supabase
       .from("subscriptions")
       .insert([
@@ -53,9 +60,14 @@ export default async function handler(req, res) {
       .select()
       .single();
 
-    if (subError) throw subError;
+    if (subError) {
+      console.error("❌ Supabase subscription insert error:", subError);
+      throw subError;
+    }
+    console.log("✅ Subscription created:", subscription);
 
     // 3️⃣ Update payment → released
+    console.log("📝 Updating payment record in Supabase...");
     const { data: payment, error: payError } = await supabase
       .from("payments")
       .update({
@@ -67,11 +79,15 @@ export default async function handler(req, res) {
       .select()
       .single();
 
-    if (payError) throw payError;
+    if (payError) {
+      console.error("❌ Supabase payment update error:", payError);
+      throw payError;
+    }
+    console.log("✅ Payment updated:", payment);
 
     res.status(200).json({ subscription, payment, pi: completeData });
   } catch (err) {
-    console.error("completePayment error:", err);
+    console.error("🔥 completePayment error:", err);
     res.status(500).json({ error: err.message });
   }
 }
