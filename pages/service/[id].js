@@ -1,3 +1,4 @@
+// pages/services/[id].js
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -11,35 +12,25 @@ const services = [
 export default function ServiceDetail() {
   const router = useRouter();
   const { id } = router.query;
-  const service = services.find((s) => s.id === parseInt(id));
-
+  const service = services.find(s => s.id === parseInt(id));
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [Pi, setPi] = useState(null);
+  const [user, setUser] = useState(null);
 
-  // --- Pi SDK init (sandbox always) ---
+  // --- Pi SDK init ---
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const initPi = () => {
-        if (window.Pi) {
-          window.Pi.init({ version: "2.0", sandbox: true });
-          setPi(window.Pi);
-        } else {
-          const script = document.createElement("script");
-          script.src = "https://sdk.minepi.com/pi-sdk.js";
-          script.async = true;
-          script.onload = () => {
-            window.Pi.init({ version: "2.0", sandbox: true });
-            setPi(window.Pi);
-          };
-          document.body.appendChild(script);
-        }
+      const script = document.createElement("script");
+      script.src = "https://sdk.minepi.com/pi-sdk.js";
+      script.async = true;
+      script.onload = () => {
+        window.Pi.init({ version: "2.0", sandbox: true });
+        setPi(window.Pi);
       };
-      initPi();
+      document.body.appendChild(script);
     }
   }, []);
-
-  if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
   const handleSubscribe = async () => {
     if (!Pi) {
@@ -51,60 +42,59 @@ export default function ServiceDetail() {
     setMessage("");
 
     try {
-      // --- autentizace uživatele přes Pi SDK ---
+      // --- authenticate user ---
       const auth = await Pi.authenticate(["payments"]);
-      if (!auth.user) throw new Error("Failed to authenticate user");
-      const user = auth.user;
+      if (!auth.user) throw new Error("Uživatel není autentizován");
+      setUser(auth.user);
 
-      // --- sandbox payment ---
+      // --- create sandbox payment ---
       await Pi.createPayment(
         {
           amount: service.price,
           memo: service.name,
+          recipient: "TVOJE_APP_ID", // <- nahraď ID tvé Pi App
+          metadata: {
+            planName: service.name,
+            studentWallet: auth.user.walletAddress,
+            studentUsername: auth.user.username,
+          },
         },
         {
           onReadyForServerApproval: async (paymentId) => {
-            setMessage(`✅ Payment ready for approval: ${paymentId}`);
+            setMessage(`Payment ready for approval: ${paymentId}`);
 
-            // --- pošleme skutečné Pi peněženky a jména na backend ---
             const res = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                paymentId,
-                service,
-                studentWallet: user.walletAddress,
-                studentUsername: user.username,
-                studentEmail: user.email,
-                teacherWallet: "22222222-2222-2222-2222-222222222222", // nastav podle potřeby
-                teacherUsername: "Teacher Name",
-                teacherEmail: "teacher@example.com",
-              }),
+              body: JSON.stringify({ paymentId, service, student: auth.user }),
             });
             const data = await res.json();
             if (data.error) setMessage("Approve error: " + data.error);
             else setMessage(`✅ Payment approved on backend!`);
           },
           onReadyForServerCompletion: async (paymentId, txid) => {
+            setMessage(`Completing payment: ${paymentId}, txid: ${txid}`);
             const res = await fetch("/api/pi/completePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId, txid }),
+              body: JSON.stringify({ paymentId, txid, student: auth.user }),
             });
             const data = await res.json();
             if (data.error) setMessage("Complete error: " + data.error);
-            else setMessage(`🎉 Payment completed! Subscription ID: ${data.subscription.id}`);
+            else setMessage(`✅ Payment completed! Subscription ID: ${data.subscription.id}`);
           },
-          onCancel: () => setMessage("❌ Platba zrušena uživatelem."),
+          onCancel: () => setMessage("❌ Platba zrušena uživatelem"),
           onError: (err) => setMessage("❌ Chyba Pi SDK: " + JSON.stringify(err)),
         }
       );
     } catch (err) {
-      setMessage("❌ Neočekávaná chyba: " + err.message);
+      setMessage("❌ Chyba: " + err.message);
     }
 
     setLoading(false);
   };
+
+  if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-blue-50 p-6">
@@ -122,7 +112,7 @@ export default function ServiceDetail() {
         </button>
 
         <p className="mt-3 text-yellow-700">
-          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči.
+          ⚠️ Sandbox režim – testuje se reálný uživatel z Pi.
         </p>
 
         <Link href="/subscriptions">
