@@ -107,8 +107,7 @@ export default async function handler(req, res) {
       .from("users")
       .update({ wallet_address: payerWallet })
       .eq("id", studentId)
-      .is("wallet_address", null);
-
+ 
     if (userUpdateError) {
       console.error("⚠️ Failed to update user wallet address:", userUpdateError);
     } else {
