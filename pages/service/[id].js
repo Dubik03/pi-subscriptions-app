@@ -1,3 +1,4 @@
+// pages/services/[id].js
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -52,16 +53,23 @@ export default function ServiceDetail() {
       // 1️⃣ Autentizace Pi
       const auth = await Pi.authenticate(["payments"]);
       const piUser = auth.user;
+      console.log("🔑 Pi Auth User:", piUser);
+
+      // fallbacky pro sandbox
+      const uid = piUser?.uid;
+      const username = piUser?.username || "guest_" + Date.now();
+      const wallet =
+        piUser?.wallet?.address ||
+        piUser?.wallet_address ||
+        "sandbox-wallet-" + Date.now();
+
+      if (!uid) throw new Error("Missing uid from Pi Auth");
 
       // 2️⃣ Sync user do Supabase
       const userRes = await fetch("/api/pi/syncUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-body: JSON.stringify({
-  pi_uid: piUser.uid,
-  username: piUser.username,
-  wallet_address: piUser.wallet?.address || null, // sandbox často nemá wallet
-}),
+        body: JSON.stringify({ pi_uid: uid, username, wallet_address: wallet }),
       });
       const userData = await userRes.json();
       if (userData.error) throw new Error(userData.error);
@@ -91,25 +99,24 @@ body: JSON.stringify({
             else setMessage(`Payment approved and stored! Payment ID: ${paymentId}`);
           },
 
+          onReadyForServerCompletion: async (paymentId, txid) => {
+            setMessage(`Completing payment: ${paymentId}, txid: ${txid}`);
+            const res = await fetch("/api/pi/completePayment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                paymentId,
+                txid,
+                studentId: userId,
+                teacherId: "22222222-2222-2222-2222-222222222222",
+                planName: service.name,
+              }),
+            });
+            const data = await res.json();
+            if (data.error) setMessage("Complete error: " + data.error);
+            else setMessage(`Payment completed! Subscription ID: ${data.subscription.id}`);
+          },
 
-
-onReadyForServerCompletion: async (paymentId, txid) => {
-  setMessage(`Completing payment: ${paymentId}, txid: ${txid}`);
-  const res = await fetch("/api/pi/completePayment", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      paymentId,
-      txid,
-      studentId: userId,
-      teacherId: "22222222-2222-2222-2222-222222222222",
-      planName: service.name,
-    }),
-  });
-  const data = await res.json();
-  if (data.error) setMessage("Complete error: " + data.error);
-  else setMessage(`Payment completed! Subscription ID: ${data.subscription.id}`);
-},
           onCancel: () => setMessage("Payment canceled by user"),
           onError: (err) => setMessage("Payment error: " + err.message),
         }
