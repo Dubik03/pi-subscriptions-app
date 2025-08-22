@@ -57,11 +57,11 @@ export default function ServiceDetail() {
       const userRes = await fetch("/api/pi/syncUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          uid: piUser.uid,
-          username: piUser.username,
-          wallet: piUser.walletAddress,
-        }),
+body: JSON.stringify({
+  pi_uid: piUser.uid,
+  username: piUser.username,
+  wallet_address: piUser.wallet?.address || null, // sandbox často nemá wallet
+}),
       });
       const userData = await userRes.json();
       if (userData.error) throw new Error(userData.error);
