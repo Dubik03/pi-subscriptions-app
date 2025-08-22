@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
+import { v4 as uuidv4 } from "uuid";
 
 const services = [
   { id: 1, name: "Fitness Klub Praha", price: 2, description: "✔️ Přístup do posilovny\n✔️ Online rezervace\n✔️ Členství ve skupině" },
@@ -17,7 +18,6 @@ export default function ServiceDetail() {
   const [message, setMessage] = useState("");
   const [Pi, setPi] = useState(null);
 
-  // --- Pi SDK init (sandbox always) ---
   useEffect(() => {
     if (typeof window !== "undefined") {
       const initPi = () => {
@@ -51,39 +51,58 @@ export default function ServiceDetail() {
     setMessage("");
 
     try {
-      // --- authenticate user (sandbox) ---
+      // --- authenticate user ---
       const auth = await Pi.authenticate(["payments"]);
-      const user = auth.user || { uid: "test-student-uid" };
+      const piUser = auth.user || { uid: "sandbox-" + Date.now(), username: "Sandbox User", walletAddress: "" };
 
-      // --- create sandbox payment ---
+      // --- sync user to Supabase ---
+      const userRes = await fetch("/api/pi/syncUser", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pi_uid: piUser.uid,
+          username: piUser.username,
+          wallet_address: piUser.walletAddress || "",
+        }),
+      });
+      const userData = await userRes.json();
+      if (userData.error) throw new Error(userData.error);
+      const userId = userData.id; // UUID uživatele
+
+      // --- create payment ---
       await Pi.createPayment(
         {
           amount: service.price,
           memo: service.name,
           metadata: {
             planName: service.name,
-            studentId: user.uid,
+            studentId: userId,
             teacherId: "22222222-2222-2222-2222-222222222222",
           },
         },
         {
           onReadyForServerApproval: async (paymentId) => {
-            setMessage(`Payment ready for approval (sandbox): ${paymentId}`);
+            // pokud není validní UUID → fallback
+            const finalPaymentId = /^[0-9a-fA-F-]{32,36}$/.test(paymentId) ? paymentId : uuidv4();
+            setMessage(`Payment ready for approval: ${finalPaymentId}`);
+
             const res = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId, service }),
+              body: JSON.stringify({ paymentId: finalPaymentId, service, studentId: userId }),
             });
             const data = await res.json();
             if (data.error) setMessage("Approve error: " + data.error);
-            else setMessage(`Payment approved on backend (sandbox)!`);
+            else setMessage(`Payment approved and stored! Payment ID: ${finalPaymentId}`);
           },
           onReadyForServerCompletion: async (paymentId, txid) => {
-            setMessage(`Completing payment (sandbox): ${paymentId}, txid: ${txid}`);
+            const finalPaymentId = /^[0-9a-fA-F-]{32,36}$/.test(paymentId) ? paymentId : uuidv4();
+            setMessage(`Completing payment: ${finalPaymentId}, txid: ${txid}`);
+
             const res = await fetch("/api/pi/completePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId, txid }),
+              body: JSON.stringify({ paymentId: finalPaymentId, txid }),
             });
             const data = await res.json();
             if (data.error) setMessage("Complete error: " + data.error);
@@ -116,7 +135,7 @@ export default function ServiceDetail() {
         </button>
 
         <p className="mt-3 text-yellow-700">
-          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči (Chrome, Firefox).
+          ⚠️ Sandbox režim je aktivní – test v běžném prohlížeči. Reálné transakce v Pi Browseru se uloží stejně.
         </p>
 
         <Link href="/subscriptions">
