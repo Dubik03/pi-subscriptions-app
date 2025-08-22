@@ -1,23 +1,23 @@
 // pages/api/pi/approvePayment.js
+
 import { supabase } from "../../../lib/supabase";
 
 export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
+  const { paymentId, service, studentId, teacherId } = req.body;
+  console.log("ApprovePayment request body:", req.body);
+
+  if (!paymentId || !studentId || !teacherId) {
+    return res.status(400).json({ error: "Missing required params" });
+  }
+
+  const PI_API_KEY = process.env.PI_API_KEY;
+  if (!PI_API_KEY) return res.status(500).json({ error: "Missing PI_API_KEY" });
+
   try {
-    const { paymentId, service, studentId, teacherId } = req.body;
-
-    console.log("ApprovePayment request body:", req.body);
-
-    if (!paymentId || !service || !studentId || !teacherId) {
-      return res.status(400).json({ error: "Missing params" });
-    }
-
-    const PI_API_KEY = process.env.PI_API_KEY;
-    if (!PI_API_KEY) throw new Error("Missing PI_API_KEY in environment");
-
-    // 1️⃣ Zavoláme Pi API /approve
+    // 1️⃣ Zavoláme Pi API
     const approveRes = await fetch(
       `https://api.minepi.com/v2/payments/${paymentId}/approve`,
       {
@@ -33,13 +33,12 @@ export default async function handler(req, res) {
     console.log("Pi API approve response:", approveData);
 
     if (!approveRes.ok) {
-      console.error("Pi API Approve error:", approveData);
       return res
         .status(400)
         .json({ error: approveData.error || "Pi approve failed" });
     }
 
-    // 2️⃣ Uložíme do Supabase payments
+    // 2️⃣ Uložíme do Supabase
     const { data, error } = await supabase
       .from("payments")
       .insert([
@@ -56,7 +55,7 @@ export default async function handler(req, res) {
 
     if (error) {
       console.error("Supabase insert error:", error);
-      throw error;
+      return res.status(500).json({ error: error.message });
     }
 
     console.log("Payment inserted into Supabase:", data);
