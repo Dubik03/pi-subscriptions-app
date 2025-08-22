@@ -80,7 +80,7 @@ export default async function handler(req, res) {
     }
     console.log("✅ Subscription created:", subscription);
 
-    // 3️⃣ Update payment → released + wallet adresy
+    // 3️⃣ Update payment → released + wallet adresy + teacher_id_final
     console.log("📝 Updating payment record in Supabase...");
     const { data: payment, error: payError } = await supabase
       .from("payments")
@@ -90,6 +90,7 @@ export default async function handler(req, res) {
         txid,
         from_wallet: payerWallet,
         to_wallet: developerWallet,
+        payee_teacher_id: teacherId, // nový sloupec
       })
       .eq("pi_payment_id", paymentId)
       .select()
@@ -106,8 +107,8 @@ export default async function handler(req, res) {
     const { error: userUpdateError } = await supabase
       .from("users")
       .update({ wallet_address: payerWallet })
-      .eq("id", studentId)
- 
+      .eq("id", studentId);
+
     if (userUpdateError) {
       console.error("⚠️ Failed to update user wallet address:", userUpdateError);
     } else {
