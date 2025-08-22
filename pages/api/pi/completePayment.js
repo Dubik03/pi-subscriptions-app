@@ -32,7 +32,21 @@ export default async function handler(req, res) {
     );
 
     const completeData = await completeRes.json();
+
+    // 🪙 Log peněženek
+    const payerWallet =
+      completeData?.payer?.wallet_address ||
+      completeData?.from_address ||
+      "unknown";
+    const developerWallet =
+      completeData?.developer?.wallet_address ||
+      completeData?.to_address ||
+      "unknown";
+
     console.log("📥 Pi API /complete response:", completeData);
+    console.log(
+      `💸 Payment flow: ${payerWallet}  --->  ${developerWallet} (amount: ${completeData?.amount})`
+    );
 
     if (!completeRes.ok) {
       console.error("❌ Pi API Complete error:", completeData);
