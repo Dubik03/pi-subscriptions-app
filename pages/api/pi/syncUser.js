@@ -1,7 +1,8 @@
+// pages/api/pi/syncUser.js
 import { supabase } from "../../../lib/supabase";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") 
+  if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
   const { uid, username, wallet } = req.body;
@@ -22,7 +23,7 @@ export default async function handler(req, res) {
       .from("users")
       .insert([{ pi_uid: uid, username, wallet_address: wallet }])
       .select()
-      .maybeSingle();
+      .single();
 
     if (error) throw error;
     res.status(200).json(newUser);
