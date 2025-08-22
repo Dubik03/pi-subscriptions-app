@@ -57,13 +57,13 @@ export default function ServiceDetail() {
 
       // fallbacky pro sandbox
       const uid = piUser?.uid;
-      const username = piUser?.username || "guest_" + Date.now();
+      if (!uid) throw new Error("Missing uid from Pi Auth");
+
+      const username = piUser?.username || `user_${uid.slice(0, 6)}`;
       const wallet =
         piUser?.wallet?.address ||
         piUser?.wallet_address ||
-        "sandbox-wallet-" + Date.now();
-
-      if (!uid) throw new Error("Missing uid from Pi Auth");
+        `sandbox-wallet-${uid.slice(0, 6)}`;
 
       // 2️⃣ Sync user do Supabase
       const userRes = await fetch("/api/pi/syncUser", {
