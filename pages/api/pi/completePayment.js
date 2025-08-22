@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   try {
     const PI_API_KEY = process.env.PI_API_KEY;
 
-    // 1️⃣ Zavolat Pi API /complete
+    // 1️⃣ Zavoláme Pi API /complete
     const completeRes = await fetch(`https://api.minepi.com/v2/payments/${paymentId}/complete`, {
       method: "POST",
       headers: {
@@ -20,46 +20,46 @@ export default async function handler(req, res) {
     });
 
     const completeData = await completeRes.json();
-    if (!completeRes.ok) return res.status(400).json({ error: completeData.error || "Pi complete failed" });
+    if (!completeRes.ok) {
+      console.error("Pi API Complete error:", completeData);
+      return res.status(400).json({ error: completeData.error || "Pi complete failed" });
+    }
 
-    // 2️⃣ Načteme platbu
-    const { data: payment, error: payErr } = await supabase
-      .from("payments")
-      .select("*")
-      .eq("id", paymentId)
-      .single();
-    if (payErr || !payment) throw new Error("Payment not found: " + payErr?.message);
-
-    // 3️⃣ Vytvoříme subscription
+    // 2️⃣ Vytvoříme subscription (30 dní napevno zatím)
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 30);
 
-    const { data: subscription, error: subErr } = await supabase
+    const { data: subscription, error: subError } = await supabase
       .from("subscriptions")
       .insert([{
-        user_id: payment.payer_id,
-        teacher_id: payment.payee_id,
+        user_id: "11111111-1111-1111-1111-111111111111",
+        teacher_id: "22222222-2222-2222-2222-222222222222",
         plan_name: "Plan přes Pi",
         pi_amount: completeData.amount,
         end_date: endDate.toISOString().split("T")[0],
       }])
       .select()
       .single();
-    if (subErr) throw new Error("Subscription insert failed: " + subErr.message);
 
-    // 4️⃣ Aktualizujeme platbu → released
-    const { data: updatedPayment, error: updateErr } = await supabase
+    if (subError) throw subError;
+
+    // 3️⃣ Update payment → released
+    const { data: payment, error: payError } = await supabase
       .from("payments")
-      .update({ status: "released", subscription_id: subscription.id, txid })
-      .eq("id", paymentId)
+      .update({
+        status: "released",
+        subscription_id: subscription.id,
+        txid
+      })
+      .eq("pi_payment_id", paymentId) // hledej podle pi_payment_id
       .select()
       .single();
-    if (updateErr) throw updateErr;
 
-    res.status(200).json({ subscription, payment: updatedPayment, pi: completeData });
+    if (payError) throw payError;
 
+    res.status(200).json({ subscription, payment, pi: completeData });
   } catch (err) {
-    console.error("CompletePayment error:", err);
+    console.error("completePayment error:", err);
     res.status(500).json({ error: err.message });
   }
 }
