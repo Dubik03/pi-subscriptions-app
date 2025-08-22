@@ -1,27 +1,28 @@
 import { supabase } from "../../../lib/supabase";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") 
+    return res.status(405).json({ error: "Method not allowed" });
 
-  const { pi_uid, username, wallet_address } = req.body;
-  if (!pi_uid) return res.status(400).json({ error: "Missing pi_uid" });
+  const { uid, username, wallet } = req.body;
+  if (!uid) return res.status(400).json({ error: "Missing uid" });
 
   try {
     // zkontrolovat existenci
     const { data: existingUser } = await supabase
       .from("users")
       .select("*")
-      .eq("pi_uid", pi_uid)
-      .single();
+      .eq("pi_uid", uid)
+      .maybeSingle();
 
     if (existingUser) return res.status(200).json(existingUser);
 
     // vložit nového uživatele
     const { data: newUser, error } = await supabase
       .from("users")
-      .insert([{ pi_uid, username, wallet_address }])
+      .insert([{ pi_uid: uid, username, wallet_address: wallet }])
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     res.status(200).json(newUser);
