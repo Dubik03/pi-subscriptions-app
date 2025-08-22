@@ -7,6 +7,9 @@ export default async function handler(req, res) {
 
   try {
     const { paymentId, service, studentId, teacherId } = req.body;
+
+    console.log("ApprovePayment request body:", req.body);
+
     if (!paymentId || !service || !studentId || !teacherId) {
       return res.status(400).json({ error: "Missing params" });
     }
@@ -27,6 +30,8 @@ export default async function handler(req, res) {
     );
 
     const approveData = await approveRes.json();
+    console.log("Pi API approve response:", approveData);
+
     if (!approveRes.ok) {
       console.error("Pi API Approve error:", approveData);
       return res
@@ -49,7 +54,12 @@ export default async function handler(req, res) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase insert error:", error);
+      throw error;
+    }
+
+    console.log("Payment inserted into Supabase:", data);
 
     res.status(200).json({ payment: data, pi: approveData });
   } catch (err) {
