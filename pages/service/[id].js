@@ -1,4 +1,3 @@
-// pages/services/[id].js
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -50,9 +49,11 @@ export default function ServiceDetail() {
     setMessage("");
 
     try {
+      // 1️⃣ Autentizace Pi
       const auth = await Pi.authenticate(["payments"]);
       const piUser = auth.user;
 
+      // 2️⃣ Sync user do Supabase
       const userRes = await fetch("/api/pi/syncUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -66,6 +67,7 @@ export default function ServiceDetail() {
       if (userData.error) throw new Error(userData.error);
       const userId = userData.id;
 
+      // 3️⃣ Vytvoření platby přes Pi SDK
       await Pi.createPayment(
         {
           amount: service.price,
@@ -126,7 +128,7 @@ export default function ServiceDetail() {
         </button>
 
         <p className="mt-3 text-yellow-700">
-          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči (Chrome, Firefox).
+          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči.
         </p>
 
         <Link href="/subscriptions">
