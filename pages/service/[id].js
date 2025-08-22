@@ -90,17 +90,26 @@ export default function ServiceDetail() {
             if (data.error) setMessage("Approve error: " + data.error);
             else setMessage(`Payment approved and stored! Payment ID: ${paymentId}`);
           },
-          onReadyForServerCompletion: async (paymentId, txid) => {
-            setMessage(`Completing payment: ${paymentId}, txid: ${txid}`);
-            const res = await fetch("/api/pi/completePayment", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId, txid }),
-            });
-            const data = await res.json();
-            if (data.error) setMessage("Complete error: " + data.error);
-            else setMessage(`Payment completed! Subscription ID: ${data.subscription.id}`);
-          },
+
+
+
+onReadyForServerCompletion: async (paymentId, txid) => {
+  setMessage(`Completing payment: ${paymentId}, txid: ${txid}`);
+  const res = await fetch("/api/pi/completePayment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      paymentId,
+      txid,
+      studentId: userId,
+      teacherId: "22222222-2222-2222-2222-222222222222",
+      planName: service.name,
+    }),
+  });
+  const data = await res.json();
+  if (data.error) setMessage("Complete error: " + data.error);
+  else setMessage(`Payment completed! Subscription ID: ${data.subscription.id}`);
+},
           onCancel: () => setMessage("Payment canceled by user"),
           onError: (err) => setMessage("Payment error: " + err.message),
         }
