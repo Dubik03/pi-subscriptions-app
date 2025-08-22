@@ -55,11 +55,10 @@ export default function ServiceDetail() {
       const piUser = auth.user;
       console.log("🔑 Pi Auth User:", piUser);
 
-      // uid musí existovat
       const uid = piUser?.uid;
       if (!uid) throw new Error("Missing uid from Pi Auth");
 
-      // username a wallet fallback pro sandbox
+      // fallbacky pro sandbox
       const username = piUser?.username || `user_${uid.slice(0, 6)}`;
       const wallet =
         piUser?.wallet?.address ||
@@ -90,12 +89,22 @@ export default function ServiceDetail() {
         {
           onReadyForServerApproval: async (paymentId) => {
             setMessage(`Payment ready for approval: ${paymentId}`);
+            console.log("Sending approvePayment request with:", {
+              paymentId,
+              studentId: userId,
+              teacherId: "22222222-2222-2222-2222-222222222222",
+            });
             const res = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ paymentId, service, studentId: userId }),
+              body: JSON.stringify({
+                paymentId,
+                studentId: userId,
+                teacherId: "22222222-2222-2222-2222-222222222222",
+              }),
             });
             const data = await res.json();
+            console.log("ApprovePayment response:", data);
             if (data.error) setMessage("Approve error: " + data.error);
             else setMessage(`Payment approved and stored! Payment ID: ${paymentId}`);
           },
@@ -114,6 +123,7 @@ export default function ServiceDetail() {
               }),
             });
             const data = await res.json();
+            console.log("CompletePayment response:", data);
             if (data.error) setMessage("Complete error: " + data.error);
             else setMessage(`Payment completed! Subscription ID: ${data.subscription.id}`);
           },
@@ -123,6 +133,7 @@ export default function ServiceDetail() {
         }
       );
     } catch (err) {
+      console.error("Subscribe flow error:", err);
       setMessage("Error: " + err.message);
     }
 
