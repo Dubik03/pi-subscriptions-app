@@ -55,10 +55,11 @@ export default function ServiceDetail() {
       const piUser = auth.user;
       console.log("🔑 Pi Auth User:", piUser);
 
-      // fallbacky pro sandbox
+      // uid musí existovat
       const uid = piUser?.uid;
       if (!uid) throw new Error("Missing uid from Pi Auth");
 
+      // username a wallet fallback pro sandbox
       const username = piUser?.username || `user_${uid.slice(0, 6)}`;
       const wallet =
         piUser?.wallet?.address ||
