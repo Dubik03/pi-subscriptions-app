@@ -16,22 +16,38 @@ export default async function handler(req, res) {
   }
 
   try {
-    debug.push(`🔹 Activating payments for subscriptionId=${subscriptionId}...`);
+    debug.push(`🔹 Activating subscription and payments for subscriptionId=${subscriptionId}...`);
 
-    const { data, error, count } = await supabase
+    // 1️⃣ Aktualizace statusu subscription na "active"
+    const { data: subscription, error: subError } = await supabase
+      .from("subscriptions")
+      .update({ status: "active" })
+      .eq("id", subscriptionId)
+      .select()
+      .single();
+
+    if (subError) {
+      debug.push(`❌ Subscription update error: ${subError.message}`);
+      throw subError;
+    }
+    debug.push("✅ Subscription updated to active");
+
+    // 2️⃣ Uvolnění všech payments (status = "released")
+    const { data: payments, error: payError, count } = await supabase
       .from("payments")
       .update({ status: "released" })
       .eq("subscription_id", subscriptionId)
+      .neq("status", "released")
       .select("*", { count: "exact" });
 
-    if (error) {
-      debug.push(`❌ Payment update error: ${error.message}`);
-      throw error;
+    if (payError) {
+      debug.push(`❌ Payments update error: ${payError.message}`);
+      throw payError;
     }
 
-    debug.push(`✅ Payments updated successfully. Rows affected: ${count}`);
+    debug.push(`✅ Payments released successfully. Rows affected: ${count}`);
 
-    res.status(200).json({ payments: data, debug });
+    res.status(200).json({ subscription, payments, debug });
   } catch (err) {
     debug.push(`🔥 Activate subscription error: ${err.message}`);
     res.status(500).json({ error: err.message, debug });
