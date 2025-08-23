@@ -16,7 +16,7 @@ export default function MySubscriptions() {
         }
 
         const authRes = await window.Pi.authenticate(
-          ["username"], // scopes
+          ["username"],
           (incompletePayment) => {
             console.log("⚠️ Incomplete payment found:", incompletePayment);
           }
@@ -44,20 +44,37 @@ export default function MySubscriptions() {
 
         const userId = users.id;
 
-        // Načteme subscriptions + rovnou teacherWallet
+        // Načteme subscriptions + teacher_id
         const { data: subs, error: subsError } = await supabase
           .from("subscriptions")
-          .select("id, plan_name, pi_amount, end_date, status, teacher_wallet")
+          .select("id, plan_name, pi_amount, end_date, status, teacher_id")
           .eq("user_id", userId);
 
         if (subsError) {
           console.error("🔥 Supabase fetch subscriptions error:", subsError);
         } else {
-          console.log("📄 Subscriptions fetched:", subs);
-          setSubscriptions(subs);
+          // Pro každý subscription doplníme wallet_address učitele
+          const subsWithWallets = await Promise.all(
+            subs.map(async (sub) => {
+              if (!sub.teacher_id) return sub;
+              const { data: teacherUser, error: teacherError } = await supabase
+                .from("users")
+                .select("wallet_address")
+                .eq("id", sub.teacher_id)
+                .single();
+              if (teacherError) {
+                console.error(`❌ Fetch teacher wallet for ${sub.teacher_id} failed:`, teacherError);
+                return sub;
+              }
+              return { ...sub, teacher_wallet: teacherUser.wallet_address };
+            })
+          );
 
-          // 🆕 Pro každé subscription načti payments
-          for (const sub of subs) {
+          console.log("📄 Subscriptions fetched with teacher wallets:", subsWithWallets);
+          setSubscriptions(subsWithWallets);
+
+          // Načteme payments pro každou subscription
+          for (const sub of subsWithWallets) {
             const { data: payments, error: payError } = await supabase
               .from("payments")
               .select("id, subscription_id, status, payee_id, pi_amount")
@@ -83,7 +100,6 @@ export default function MySubscriptions() {
   const handleApprove = async (id, teacherWallet) => {
     try {
       console.log(`➡️ Approving subscription ${id} via /api/activate`);
-
       const res = await fetch("/api/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -152,7 +168,7 @@ export default function MySubscriptions() {
             <p className="text-gray-700 mb-1">Price: {sub.pi_amount} Pi / month</p>
             <p className="text-gray-700 mb-2">Status: {sub.status}</p>
 
-            {sub.status === "pending" && (
+            {sub.status === "pending" && sub.teacher_wallet && (
               <button
                 onClick={() => handleApprove(sub.id, sub.teacher_wallet)}
                 className="px-6 py-2 bg-green-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-2"
