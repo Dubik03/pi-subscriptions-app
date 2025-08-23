@@ -6,14 +6,17 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
 
   const { paymentId, service, studentId, teacherId } = req.body;
-  if (!paymentId || !studentId || !teacherId)
+  console.log("ApprovePayment request body:", req.body);
+
+  if (!paymentId || !studentId || !teacherId) {
     return res.status(400).json({ error: "Missing required params" });
+  }
 
   const PI_API_KEY = process.env.PI_API_KEY;
   if (!PI_API_KEY) return res.status(500).json({ error: "Missing PI_API_KEY" });
 
   try {
-    // 1️⃣ Zavoláme Pi API approve
+    // 1️⃣ Zavoláme Pi API
     const approveRes = await fetch(
       `https://api.minepi.com/v2/payments/${paymentId}/approve`,
       {
@@ -26,30 +29,30 @@ export default async function handler(req, res) {
     );
 
     const approveData = await approveRes.json();
-    if (!approveRes.ok) return res.status(400).json({ error: approveData.error || "Pi approve failed" });
+    console.log("Pi API approve response:", approveData);
 
-    // 2️⃣ Update payment na skutečného učitele
+    if (!approveRes.ok) {
+      return res
+        .status(400)
+        .json({ error: approveData.error || "Pi approve failed" });
+    }
+
+    // 2️⃣ Uložíme do Supabase
     const { data, error } = await supabase
       .from("payments")
-      .update({
-        status: "approved",
-        payee_id: teacherId, // skutečný učitel dostane peníze
-      })
-      .eq("pi_payment_id", paymentId)
+      .insert([
+        {
+          pi_payment_id: paymentId,
+          payer_id: studentId,
+          payee_id: "22222222-2222-2222-2222-222222222222", // escrow účet
+          payee_teacher_id: teacherId, // skutečný učitel
+          pi_amount: service?.price || approveData.amount,
+          status: "pending",
+        },
+      ])
       .select()
       .single();
 
-    if (error) return res.status(500).json({ error: error.message });
-
-    // 3️⃣ Update subscription status na active
-    await supabase
-      .from("subscriptions")
-      .update({ status: "active" })
-      .eq("id", data.subscription_id);
-
-    res.status(200).json({ payment: data, pi: approveData });
-  } catch (err) {
-    console.error("🔥 ApprovePayment error:", err);
-    res.status(500).json({ error: err.message });
-  }
-}
+    if (error) {
+      console.error("Supabase insert error:", error);
+      return res.status(50
