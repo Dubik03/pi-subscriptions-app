@@ -60,7 +60,7 @@ export default function MySubscriptions() {
           for (const sub of subs) {
             const { data: payments, error: payError } = await supabase
               .from("payments")
-              .select("id, subscription_id, status, payee_id, amount")
+              .select("id, subscription_id, status, payee_id, pi_amount")
               .eq("subscription_id", sub.id);
 
             if (payError) {
