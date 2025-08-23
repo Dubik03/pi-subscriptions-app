@@ -4,58 +4,57 @@ import { supabase } from "../lib/supabase";
 export default function MySubscriptions() {
   const [subscriptions, setSubscriptions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [userId, setUserId] = useState(null);
+  const [piUser, setPiUser] = useState(null);
 
   useEffect(() => {
     const fetchSubscriptions = async () => {
-      console.log("fetchSubscriptions started");
-
-      // čekáme, až SDK bude načtené
-      if (!window.Pi || !window.Pi.Wallet) {
-        console.warn("⚠️ Pi SDK not loaded yet");
-        return;
-      }
-
       try {
-        // 1️⃣ Autentizace uživatele
-        console.log("ℹ️ Authenticating user via Pi SDK...");
-        const authRes = await window.Pi.authenticate(
-          ["user:basic"], // pouze platný scope
+        console.log("fetchSubscriptions started");
+
+        if (!window.Pi || !window.Pi.Wallet) {
+          console.warn("⚠️ Pi SDK not loaded yet");
+          return;
+        }
+
+        // 1️⃣ Inicializace Pi SDK a autentizace
+        console.log("🔐 Authenticating user via Pi SDK...");
+        const authRes = await window.Pi.Wallet.authenticate(
+          ["username"], // scopes, můžeme přidat další pokud bude potřeba
           (incompletePayment) => {
-            console.log("🔔 Incomplete payment callback:", incompletePayment);
+            console.log("⚠️ Incomplete payment found:", incompletePayment);
           }
         );
 
-        console.log("✅ Pi wallet authenticated:", authRes);
+        console.log("✅ Pi SDK authenticated:", authRes);
 
+        // 2️⃣ Získání uid přes /me endpoint
         const accessToken = authRes?.accessToken;
-        if (!accessToken) throw new Error("No accessToken returned from Pi");
+        if (!accessToken) throw new Error("Missing access token from Pi SDK");
 
-        // 2️⃣ Zavoláme Pi /me endpoint pro získání aktuálního userId
         const meRes = await fetch("https://api.minepi.com/v2/me", {
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
         });
-        if (!meRes.ok) throw new Error("Failed to fetch /me from Pi");
+
+        if (!meRes.ok) throw new Error("Failed to fetch Pi user info");
+
         const meData = await meRes.json();
-        console.log("👤 Current Pi user:", meData);
+        console.log("📦 Pi /me response:", meData);
 
-        const currentUserId = meData.id;
-        setUserId(currentUserId);
+        const currentUserId = meData.uid;
+        setPiUser(meData);
 
-        // 3️⃣ Fetch subscriptions ze Supabase pro aktuálního uživatele
+        // 3️⃣ Načtení předplatných z Supabase podle uid
         const { data, error } = await supabase
           .from("subscriptions")
           .select("id, plan_name, pi_amount, end_date, status")
           .eq("user_id", currentUserId);
 
-        if (error) {
-          console.error("🔥 Supabase fetch subscriptions error:", error);
-        } else {
-          console.log("✅ Subscriptions fetched:", data);
-          setSubscriptions(data);
-        }
+        if (error) throw error;
+
+        setSubscriptions(data);
+        console.log("✅ Subscriptions loaded:", data);
       } catch (err) {
         console.error("🔥 Pi fetchSubscriptions error:", err);
       } finally {
@@ -75,28 +74,22 @@ export default function MySubscriptions() {
     if (!error) setSubscriptions(subscriptions.filter((s) => s.id !== id));
   };
 
-  const handleApprovePayment = async (sub) => {
+  const handleApprove = async (id) => {
     try {
-      const res = await fetch("/api/pi/approvePayment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          paymentId: sub.pi_payment_id,
-          studentId: userId,
-          teacherId: sub.teacher_id,
-        }),
-      });
-      const data = await res.json();
-      console.log("Payment approved:", data);
+      const { error } = await supabase
+        .from("subscriptions")
+        .update({ status: "active" })
+        .eq("id", id);
 
-      // update status subscription na active
-      setSubscriptions((prev) =>
-        prev.map((s) =>
-          s.id === sub.id ? { ...s, status: "active" } : s
+      if (error) throw error;
+
+      setSubscriptions(
+        subscriptions.map((s) =>
+          s.id === id ? { ...s, status: "active" } : s
         )
       );
     } catch (err) {
-      console.error("🔥 Approve payment error:", err);
+      console.error("🔥 Approve subscription error:", err);
     }
   };
 
@@ -119,21 +112,36 @@ export default function MySubscriptions() {
             </h2>
             <p className="text-gray-700 mb-1">Next Payment: {sub.end_date}</p>
             <p className="text-gray-700 mb-2">Price: {sub.pi_amount} Pi / month</p>
-            <p className="text-gray-700 mb-2">Status: {sub.status}</p>
+            <p className="text-gray-700 mb-2">
+              Status:{" "}
+              <span
+                className={
+                  sub.status === "active"
+                    ? "text-green-600 font-semibold"
+                    : sub.status === "pending"
+                    ? "text-yellow-600 font-semibold"
+                    : "text-red-600 font-semibold"
+                }
+              >
+                {sub.status}
+              </span>
+            </p>
             {sub.status === "pending" && (
               <button
-                onClick={() => handleApprovePayment(sub)}
+                onClick={() => handleApprove(sub.id)}
                 className="px-6 py-2 bg-green-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-2"
               >
                 Approve / Release Payment
               </button>
             )}
-            <button
-              onClick={() => handleCancel(sub.id)}
-              className="px-6 py-2 bg-red-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform"
-            >
-              Cancel
-            </button>
+            {sub.status !== "cancelled" && (
+              <button
+                onClick={() => handleCancel(sub.id)}
+                className="px-6 py-2 bg-red-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         ))}
       </div>
