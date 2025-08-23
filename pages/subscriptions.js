@@ -16,7 +16,7 @@ export default function MySubscriptions() {
         }
 
         const authRes = await window.Pi.authenticate(
-          ["username"], // scopes
+          ["username"],
           (incompletePayment) => {
             console.log("⚠️ Incomplete payment found:", incompletePayment);
           }
@@ -44,10 +44,10 @@ export default function MySubscriptions() {
 
         const userId = users.id;
 
-        // Načteme subscriptions + rovnou teacherWallet
+        // Načteme subscriptions s teacher_id
         const { data: subs, error: subsError } = await supabase
           .from("subscriptions")
-          .select("id, plan_name, pi_amount, end_date, status, teacher_wallet")
+          .select("id, plan_name, pi_amount, end_date, status, teacher_id")
           .eq("user_id", userId);
 
         if (subsError) {
@@ -56,7 +56,7 @@ export default function MySubscriptions() {
           console.log("📄 Subscriptions fetched:", subs);
           setSubscriptions(subs);
 
-          // 🆕 Pro každé subscription načti payments
+          // Načteme payments pro každou subscription
           for (const sub of subs) {
             const { data: payments, error: payError } = await supabase
               .from("payments")
@@ -80,16 +80,31 @@ export default function MySubscriptions() {
     fetchSubscriptions();
   }, []);
 
-  const handleApprove = async (id, teacherWallet) => {
+  const handleApprove = async (sub) => {
     try {
-      console.log(`➡️ Approving subscription ${id} via /api/activate`);
+      console.log(`➡️ Approving subscription ${sub.id}`);
 
+      // Nejprve získáme teacher wallet_address
+      const { data: teacherUser, error: teacherError } = await supabase
+        .from("users")
+        .select("wallet_address")
+        .eq("id", sub.teacher_id)
+        .single();
+
+      if (teacherError || !teacherUser) {
+        console.error("❌ Could not fetch teacher wallet:", teacherError);
+        return;
+      }
+
+      const teacherWallet = teacherUser.wallet_address;
+
+      // Zavoláme API /api/activate
       const res = await fetch("/api/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          subscriptionId: id,
-          teacherWallet: teacherWallet,
+          subscriptionId: sub.id,
+          teacherWallet,
         }),
       });
 
@@ -101,10 +116,10 @@ export default function MySubscriptions() {
         return;
       }
 
-      // update local state
+      // Update lokálního stavu
       setSubscriptions(
         subscriptions.map((s) =>
-          s.id === id ? { ...s, status: "active" } : s
+          s.id === sub.id ? { ...s, status: "active" } : s
         )
       );
     } catch (err) {
@@ -154,7 +169,7 @@ export default function MySubscriptions() {
 
             {sub.status === "pending" && (
               <button
-                onClick={() => handleApprove(sub.id, sub.teacher_wallet)}
+                onClick={() => handleApprove(sub)}
                 className="px-6 py-2 bg-green-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-2"
               >
                 Approve Payment
