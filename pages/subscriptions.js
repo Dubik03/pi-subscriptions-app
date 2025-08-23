@@ -1,4 +1,3 @@
-// pages/subscriptions.js
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 
@@ -32,62 +31,32 @@ export default function MySubscriptions() {
         setUserUid(authRes.user.uid);
 
         // Najdeme Supabase user_id podle pi_uid
-        const { data: users, error: userError } = await supabase
+        const { data: user, error: userError } = await supabase
           .from("users")
           .select("id")
           .eq("pi_uid", authRes.user.uid)
           .single();
 
-        if (userError || !users) {
+        if (userError || !user) {
           console.error("🔥 Supabase fetch user error:", userError);
           return;
         }
 
-        const userId = users.id;
+        const userId = user.id;
 
-        // Načteme subscriptions + teacher_id
+        // Načteme subscriptions
         const { data: subs, error: subsError } = await supabase
           .from("subscriptions")
-          .select("id, plan_name, pi_amount, end_date, status, teacher_id")
+          .select("id, plan_name, pi_amount, end_date, status")
           .eq("user_id", userId);
 
         if (subsError) {
           console.error("🔥 Supabase fetch subscriptions error:", subsError);
-        } else {
-          // Pro každý subscription doplníme wallet_address učitele
-          const subsWithWallets = await Promise.all(
-            subs.map(async (sub) => {
-              if (!sub.teacher_id) return sub;
-              const { data: teacherUser, error: teacherError } = await supabase
-                .from("users")
-                .select("wallet_address")
-                .eq("id", sub.teacher_id)
-                .single();
-              if (teacherError) {
-                console.error(`❌ Fetch teacher wallet for ${sub.teacher_id} failed:`, teacherError);
-                return sub;
-              }
-              return { ...sub, teacher_wallet: teacherUser.wallet_address };
-            })
-          );
-
-          console.log("📄 Subscriptions fetched with teacher wallets:", subsWithWallets);
-          setSubscriptions(subsWithWallets);
-
-          // Načteme payments pro každou subscription
-          for (const sub of subsWithWallets) {
-            const { data: payments, error: payError } = await supabase
-              .from("payments")
-              .select("id, subscription_id, status, payee_id, pi_amount")
-              .eq("subscription_id", sub.id);
-
-            if (payError) {
-              console.error(`❌ Payments fetch error for subscription ${sub.id}:`, payError);
-            } else {
-              console.log(`💰 Payments for subscription ${sub.id}:`, payments);
-            }
-          }
+          return;
         }
+
+        console.log("📄 Subscriptions fetched:", subs);
+        setSubscriptions(subs);
       } catch (err) {
         console.error("🔥 fetchSubscriptions error:", err);
       } finally {
@@ -98,16 +67,13 @@ export default function MySubscriptions() {
     fetchSubscriptions();
   }, []);
 
-  const handleApprove = async (id, teacherWallet) => {
+  const handleApprove = async (subscriptionId) => {
     try {
-      console.log(`➡️ Approving subscription ${id} via /api/pi/activate`);
-      const res = await fetch("/api/pi/activate", {
+      console.log(`➡️ Activating payments for subscription ${subscriptionId}`);
+      const res = await fetch("/api/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subscriptionId: id,
-          teacherWallet: teacherWallet,
-        }),
+        body: JSON.stringify({ subscriptionId }),
       });
 
       const result = await res.json();
@@ -118,10 +84,10 @@ export default function MySubscriptions() {
         return;
       }
 
-      // update local state
+      // Aktualizace stavu lokálně
       setSubscriptions(
         subscriptions.map((s) =>
-          s.id === id ? { ...s, status: "active" } : s
+          s.id === subscriptionId ? { ...s, status: "active" } : s
         )
       );
     } catch (err) {
@@ -148,8 +114,7 @@ export default function MySubscriptions() {
     }
   };
 
-  if (loading)
-    return <p className="text-center mt-10">Načítám předplatná...</p>;
+  if (loading) return <p className="text-center mt-10">Načítám předplatná...</p>;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-blue-50 p-6">
@@ -169,9 +134,9 @@ export default function MySubscriptions() {
             <p className="text-gray-700 mb-1">Price: {sub.pi_amount} Pi / month</p>
             <p className="text-gray-700 mb-2">Status: {sub.status}</p>
 
-            {sub.status === "pending" && sub.teacher_wallet && (
+            {sub.status === "pending" && (
               <button
-                onClick={() => handleApprove(sub.id, sub.teacher_wallet)}
+                onClick={() => handleApprove(sub.id)}
                 className="px-6 py-2 bg-green-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-2"
               >
                 Approve Payment
