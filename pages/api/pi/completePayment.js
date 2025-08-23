@@ -5,11 +5,11 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
-  const { paymentId, txid, studentId, teacherId, planName } = req.body;
-  if (!paymentId || !txid || !studentId || !teacherId)
+  const { paymentId, txid, studentId, serviceId, planName } = req.body;
+  if (!paymentId || !txid || !studentId || !serviceId)
     return res
       .status(400)
-      .json({ error: "Missing paymentId, txid, studentId or teacherId" });
+      .json({ error: "Missing paymentId, txid, studentId or serviceId" });
 
   try {
     const PI_API_KEY = process.env.PI_API_KEY;
@@ -18,7 +18,6 @@ export default async function handler(req, res) {
     console.log("✅ Starting completePayment for paymentId:", paymentId);
 
     // 1️⃣ Zavoláme Pi API /complete
-    console.log("🌐 Calling Pi API /complete with txid:", txid);
     const completeRes = await fetch(
       `https://api.minepi.com/v2/payments/${paymentId}/complete`,
       {
@@ -30,10 +29,16 @@ export default async function handler(req, res) {
         body: JSON.stringify({ txid }),
       }
     );
-
     const completeData = await completeRes.json();
 
-    // 🪙 Log peněženek
+    if (!completeRes.ok) {
+      console.error("❌ Pi API Complete error:", completeData);
+      return res
+        .status(400)
+        .json({ error: completeData.error || "Pi complete failed" });
+    }
+
+    // 🪙 Wallety
     const payerWallet =
       completeData?.payer?.wallet_address ||
       completeData?.from_address ||
@@ -43,46 +48,41 @@ export default async function handler(req, res) {
       completeData?.to_address ||
       "unknown";
 
-    console.log("📥 Pi API /complete response:", completeData);
-    console.log(
-      `💸 Payment flow: ${payerWallet}  --->  ${developerWallet} (amount: ${completeData?.amount})`
-    );
+    // 2️⃣ Najdeme službu (kdo je owner)
+    const { data: service, error: serviceError } = await supabase
+      .from("services")
+      .select("id, owner_id, price, name")
+      .eq("id", serviceId)
+      .single();
 
-    if (!completeRes.ok) {
-      console.error("❌ Pi API Complete error:", completeData);
-      return res
-        .status(400)
-        .json({ error: completeData.error || "Pi complete failed" });
+    if (serviceError || !service) {
+      console.error("Service fetch error:", serviceError);
+      return res.status(404).json({ error: "Service not found" });
     }
 
-    // 2️⃣ Vytvoříme subscription
+    // 3️⃣ Vytvoříme subscription
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 30);
 
-    console.log("📝 Creating subscription in Supabase...");
     const { data: subscription, error: subError } = await supabase
       .from("subscriptions")
       .insert([
         {
           user_id: studentId,
-          teacher_id: teacherId,
-          plan_name: planName || "Pi subscription",
+          service_id: service.id,
+          teacher_id: service.owner_id,
+          plan_name: planName || service.name,
           pi_amount: completeData.amount,
           end_date: endDate.toISOString().split("T")[0],
-          status: "pending", 
+          status: "pending",
         },
       ])
       .select()
       .single();
 
-    if (subError) {
-      console.error("❌ Supabase subscription insert error:", subError);
-      throw subError;
-    }
-    console.log("✅ Subscription created:", subscription);
+    if (subError) throw subError;
 
-    // 3️⃣ Update payment → pending + wallet adresy
-    console.log("📝 Updating payment record in Supabase...");
+    // 4️⃣ Update payment
     const { data: payment, error: payError } = await supabase
       .from("payments")
       .update({
@@ -96,24 +96,13 @@ export default async function handler(req, res) {
       .select()
       .single();
 
-    if (payError) {
-      console.error("❌ Supabase payment update error:", payError);
-      throw payError;
-    }
-    console.log("✅ Payment updated:", payment);
+    if (payError) throw payError;
 
-    // 4️⃣ Update user's wallet address pokud ještě není uložená
-    console.log("🔄 Updating user's wallet address if missing...");
-    const { error: userUpdateError } = await supabase
-       .from("users")
-  .update({ wallet_address: payerWallet })
-  .eq("id", studentId);
-
-    if (userUpdateError) {
-      console.error("⚠️ Failed to update user wallet address:", userUpdateError);
-    } else {
-      console.log("✅ User wallet address updated (if it was missing).");
-    }
+    // 5️⃣ Update wallet uživatele
+    await supabase
+      .from("users")
+      .update({ wallet_address: payerWallet })
+      .eq("id", studentId);
 
     res.status(200).json({ subscription, payment, pi: completeData });
   } catch (err) {
