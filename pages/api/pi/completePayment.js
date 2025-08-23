@@ -80,12 +80,12 @@ export default async function handler(req, res) {
     }
     console.log("✅ Subscription created:", subscription);
 
-    // 3️⃣ Update payment → released + wallet adresy
+    // 3️⃣ Update payment → pending + wallet adresy
     console.log("📝 Updating payment record in Supabase...");
     const { data: payment, error: payError } = await supabase
       .from("payments")
       .update({
-        status: "released",
+        status: "pending",
         subscription_id: subscription.id,
         txid,
         from_wallet: payerWallet,
