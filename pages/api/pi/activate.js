@@ -34,7 +34,6 @@ export default async function handler(req, res) {
     const { data: payment, error: payError } = await supabase
       .from("payments")
       .update({
-        payee_id: teacherWallet,
         status: "released",
       })
       .eq("subscription_id", subscriptionId)
