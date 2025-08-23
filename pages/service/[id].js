@@ -2,21 +2,37 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-
-const services = [
-  { id: 1, name: "Fitness Klub Praha", price: 2, description: "✔️ Přístup do posilovny\n✔️ Online rezervace\n✔️ Členství ve skupině" },
-  { id: 2, name: "Online English Tutor", price: 1.5, description: "✔️ Online lekce\n✔️ Přístup k materiálům\n✔️ Individuální feedback" },
-  { id: 3, name: "Crypto News Portal", price: 0.5, description: "✔️ Přístup k exkluzivnímu obsahu\n✔️ Týdenní analýzy\n✔️ Premium newsletter" },
-];
+import { supabase } from "../../lib/supabase"; // přidat import
 
 export default function ServiceDetail() {
   const router = useRouter();
   const { id } = router.query;
-  const service = services.find((s) => s.id === parseInt(id));
+  const [service, setService] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [Pi, setPi] = useState(null);
 
+  // ✅ Načteme službu z DB
+  useEffect(() => {
+    if (!id) return;
+    const fetchService = async () => {
+      const { data, error } = await supabase
+        .from("services")
+        .select("id, name, price, description, owner_id")
+        .eq("id", id)
+        .single();
+
+      if (error) {
+        console.error("Service fetch error:", error);
+        setMessage("Service not found");
+      } else {
+        setService(data);
+      }
+    };
+    fetchService();
+  }, [id]);
+
+  // ✅ Inicializace Pi SDK
   useEffect(() => {
     if (typeof window !== "undefined") {
       const initPi = () => {
@@ -38,7 +54,7 @@ export default function ServiceDetail() {
     }
   }, []);
 
-  if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
+  if (!service) return <p className="text-center mt-10 text-red-500">Loading service...</p>;
 
   const handleSubscribe = async () => {
     if (!Pi) {
@@ -50,22 +66,20 @@ export default function ServiceDetail() {
     setMessage("");
 
     try {
-      // 1️⃣ Autentizace Pi
+      // 🔑 Autentizace
       const auth = await Pi.authenticate(["payments"]);
       const piUser = auth.user;
-      console.log("🔑 Pi Auth User:", piUser);
 
       const uid = piUser?.uid;
       if (!uid) throw new Error("Missing uid from Pi Auth");
 
-      // fallbacky pro sandbox
       const username = piUser?.username || `user_${uid.slice(0, 6)}`;
       const wallet =
         piUser?.wallet?.address ||
         piUser?.wallet_address ||
         `sandbox-wallet-${uid.slice(0, 6)}`;
 
-      // 2️⃣ Sync user do Supabase
+      // 👤 Sync user
       const userRes = await fetch("/api/pi/syncUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -75,7 +89,7 @@ export default function ServiceDetail() {
       if (userData.error) throw new Error(userData.error);
       const userId = userData.id;
 
-      // 3️⃣ Vytvoření platby přes Pi SDK
+      // 💸 Vytvoření platby přes Pi SDK
       await Pi.createPayment(
         {
           amount: service.price,
@@ -83,51 +97,36 @@ export default function ServiceDetail() {
           metadata: {
             planName: service.name,
             studentId: userId,
-            teacherId: "22222222-2222-2222-2222-222222222222",
+            serviceId: service.id,        // ✅ místo teacherId
+            ownerId: service.owner_id,    // ✅ učitel z DB
           },
         },
         {
           onReadyForServerApproval: async (paymentId) => {
             setMessage(`Payment ready for approval: ${paymentId}`);
-            console.log("Sending approvePayment request with:", {
-              paymentId,
-              studentId: userId,
-              teacherId: "22222222-2222-2222-2222-222222222222",
-            });
-            const res = await fetch("/api/pi/approvePayment", {
+            await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 paymentId,
                 studentId: userId,
-                teacherId: "22222222-2222-2222-2222-222222222222",
+                serviceId: service.id,
               }),
             });
-            const data = await res.json();
-            console.log("ApprovePayment response:", data);
-            if (data.error) setMessage("Approve error: " + data.error);
-            else setMessage(`Payment approved and stored! Payment ID: ${paymentId}`);
           },
-
           onReadyForServerCompletion: async (paymentId, txid) => {
-            setMessage(`Completing payment: ${paymentId}, txid: ${txid}`);
-            const res = await fetch("/api/pi/completePayment", {
+            setMessage(`Completing payment: ${paymentId}`);
+            await fetch("/api/pi/completePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 paymentId,
                 txid,
                 studentId: userId,
-                teacherId: "22222222-2222-2222-2222-222222222222",
-                planName: service.name,
+                serviceId: service.id,
               }),
             });
-            const data = await res.json();
-            console.log("CompletePayment response:", data);
-            if (data.error) setMessage("Complete error: " + data.error);
-            else setMessage(`Payment completed! Subscription ID: ${data.subscription.id}`);
           },
-
           onCancel: () => setMessage("Payment canceled by user"),
           onError: (err) => setMessage("Payment error: " + err.message),
         }
@@ -154,10 +153,6 @@ export default function ServiceDetail() {
         >
           {loading ? "Probíhá..." : "Subscribe Now"}
         </button>
-
-        <p className="mt-3 text-yellow-700">
-          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči.
-        </p>
 
         <Link href="/subscriptions">
           <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform mt-3">
