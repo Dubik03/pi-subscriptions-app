@@ -70,7 +70,7 @@ export default function MySubscriptions() {
   const handleApprove = async (subscriptionId) => {
     try {
       console.log(`➡️ Activating payments for subscription ${subscriptionId}`);
-      const res = await fetch("/api/activate", {
+      const res = await fetch("/api/pi/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subscriptionId }),
