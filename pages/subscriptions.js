@@ -7,35 +7,36 @@ export default function MySubscriptions() {
 
   useEffect(() => {
     const fetchSubscriptions = async () => {
-      console.log("🔹 fetchSubscriptions started");
-
-      if (typeof window === "undefined") return;
+      console.log("fetchSubscriptions started");
 
       const waitForPi = async () => {
-        if (!window.Pi) {
-          console.log("⚠️ Pi SDK not loaded yet, retrying...");
+        if (!window.Pi || !window.Pi.initialized) {
+          console.log("⚠️ Pi SDK not ready yet, retrying in 500ms...");
           setTimeout(waitForPi, 500);
           return;
         }
 
-        const Pi = window.Pi;
-        console.log("✅ Pi SDK loaded:", Pi);
-
         try {
-          const auth = await Pi.authenticate();
-          console.log("✅ Pi auth success:", auth);
-          const piUid = auth.user.uid;
+          const isAuth = await window.Pi.Wallet.checkAuthenticated();
+          console.log("✅ Pi wallet authenticated:", isAuth);
+
+          if (!isAuth) {
+            console.log("ℹ️ User not authenticated, requesting login...");
+            await window.Pi.Wallet.requestLogin();
+          }
+
+          const piUid = window.Pi.Wallet.user?.uid;
           console.log("ℹ️ Current user Pi UID:", piUid);
+
+          if (!piUid) throw new Error("Pi UID not available yet");
 
           const { data, error } = await supabase
             .from('subscriptions')
-            .select('id, plan_name, pi_amount, end_date, status, payment_id, teacher_id')
+            .select('id, plan_name, pi_amount, end_date, status')
             .eq('user_id', piUid);
 
-          if (error) {
-            console.error("❌ Supabase fetch error:", error);
-            setSubscriptions([]);
-          } else {
+          if (error) console.error("❌ Supabase fetch error:", error);
+          else {
             console.log("✅ Subscriptions fetched:", data);
             setSubscriptions(data || []);
           }
@@ -58,28 +59,8 @@ export default function MySubscriptions() {
       .from('subscriptions')
       .update({ status: 'cancelled' })
       .eq('id', id);
+
     if (!error) setSubscriptions(subscriptions.filter(s => s.id !== id));
-  };
-
-  const handleApprovePayment = async (sub) => {
-    try {
-      const { data, error } = await supabase
-        .from('subscriptions')
-        .update({ status: 'active' })
-        .eq('id', sub.id)
-        .select()
-        .single();
-
-      if (error) {
-        console.error("❌ Error approving payment:", error);
-        return;
-      }
-
-      console.log("✅ Payment approved for subscription:", data);
-      setSubscriptions(subscriptions.map(s => s.id === sub.id ? data : s));
-    } catch (err) {
-      console.error("🔥 handleApprovePayment error:", err);
-    }
   };
 
   if (loading) return <p className="text-center mt-10">Načítám předplatná...</p>;
@@ -93,25 +74,19 @@ export default function MySubscriptions() {
             <h2 className="font-semibold text-xl mb-2 text-blue-700">{sub.plan_name}</h2>
             <p className="text-gray-700 mb-1">Next Payment: {sub.end_date}</p>
             <p className="text-gray-700 mb-2">Price: {sub.pi_amount} Pi / month</p>
-            <p className={`mb-2 font-semibold ${sub.status === 'active' ? 'text-green-600' : 'text-yellow-700'}`}>
-              Status: {sub.status}
-            </p>
-
-            {sub.status === 'pending' && (
+            <p className="text-gray-700 mb-2">Status: {sub.status}</p>
+            {sub.status === 'pending' ? (
+              <button className="px-6 py-2 bg-green-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform">
+                Confirm / Release Payment
+              </button>
+            ) : (
               <button
-                onClick={() => handleApprovePayment(sub)}
-                className="px-6 py-2 bg-green-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-3"
+                onClick={() => handleCancel(sub.id)}
+                className="px-6 py-2 bg-red-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform"
               >
-                Approve Payment
+                Cancel
               </button>
             )}
-
-            <button
-              onClick={() => handleCancel(sub.id)}
-              className="px-6 py-2 bg-red-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform"
-            >
-              Cancel
-            </button>
           </div>
         ))}
       </div>
