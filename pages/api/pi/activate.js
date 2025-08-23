@@ -2,7 +2,7 @@
 import { supabase } from "../../../lib/supabase";
 
 export default async function handler(req, res) {
-  const debug = []; // sběr logů
+  const debug = [];
 
   if (req.method !== "POST") {
     debug.push("❌ Method not allowed");
@@ -47,30 +47,33 @@ export default async function handler(req, res) {
       debug.push(`📄 Payments before release: ${JSON.stringify(paymentsBefore, null, 2)}`);
     }
 
-    // 3️⃣ Update all payments for this subscription
+    // 3️⃣ Update payments (jen ty, co nejsou už released)
     debug.push("➡️ Releasing all payments from escrow to teacherWallet...");
-    const { data: paymentsAfter, error: payError } = await supabase
+    const { data: paymentsAfter, error: payError, count } = await supabase
       .from("payments")
       .update({
         status: "released",
         payee_id: teacherWallet
       })
       .eq("subscription_id", subscriptionId)
-      .select(); // získáme pole všech paymentů
+      .neq("status", "released")
+      .select("*", { count: "exact" });
 
     if (payError) {
       debug.push(`❌ Payment update error: ${payError.message}`);
+      debug.push(JSON.stringify(payError, null, 2));
       throw payError;
     }
 
+    debug.push(`ℹ️ Update affected rows: ${count}`);
+
     if (!paymentsAfter || paymentsAfter.length === 0) {
-      debug.push("⚠️ No payments found for this subscription!");
+      debug.push("⚠️ No payments found or updated for this subscription!");
     } else {
       debug.push(`✅ Payments released successfully: ${paymentsAfter.length} payment(s) updated`);
       debug.push(`📄 Payments after release: ${JSON.stringify(paymentsAfter, null, 2)}`);
     }
 
-    // 📤 Response do frontendu
     res.status(200).json({ subscription, payments: paymentsAfter, debug });
   } catch (err) {
     debug.push(`🔥 Activate subscription error: ${err.message}`);
