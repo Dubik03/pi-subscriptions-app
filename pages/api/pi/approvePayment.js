@@ -45,7 +45,6 @@ export default async function handler(req, res) {
           pi_payment_id: paymentId,
           payer_id: studentId,
           payee_id: "22222222-2222-2222-2222-222222222222", // escrow účet
-          payee_teacher_id: teacherId, // skutečný učitel
           pi_amount: service?.price || approveData.amount,
           status: "pending",
         },
