@@ -10,13 +10,14 @@ export default function MySubscriptions() {
     const fetchSubscriptions = async () => {
       try {
         console.log("⚡ Attempting Pi SDK authentication...");
+
         if (!window.Pi || !window.Pi.authenticate) {
           console.error("❌ Pi SDK not loaded or authenticate() missing");
           return;
         }
 
         const authRes = await window.Pi.authenticate(
-          ["username"], // scopes, přidej další podle potřeby
+          ["username"], // scopes
           (incompletePayment) => {
             console.log("⚠️ Incomplete payment found:", incompletePayment);
           }
@@ -30,17 +31,32 @@ export default function MySubscriptions() {
         console.log("✅ Pi wallet authenticated:", authRes);
         setUserUid(authRes.user.uid);
 
-        // Načteme předplatná z Supabase podle UID
-        const { data, error } = await supabase
+        // 1️⃣ Najdeme interní Supabase ID podle pi_uid
+        const { data: userData, error: userError } = await supabase
+          .from("users")
+          .select("id")
+          .eq("pi_uid", authRes.user.uid)
+          .single();
+
+        if (userError || !userData) {
+          console.error("❌ User not found in Supabase:", userError);
+          setLoading(false);
+          return;
+        }
+
+        const userId = userData.id;
+
+        // 2️⃣ Načteme předplatná podle interního user_id
+        const { data: subsData, error: subsError } = await supabase
           .from("subscriptions")
           .select("id, plan_name, pi_amount, end_date, status")
-          .eq("user_id", authRes.user.uid);
+          .eq("user_id", userId);
 
-        if (error) {
-          console.error("🔥 Supabase fetch subscriptions error:", error);
+        if (subsError) {
+          console.error("🔥 Supabase fetch subscriptions error:", subsError);
         } else {
-          console.log("📄 Subscriptions fetched:", data);
-          setSubscriptions(data);
+          console.log("📄 Subscriptions fetched:", subsData);
+          setSubscriptions(subsData);
         }
       } catch (err) {
         console.error("🔥 fetchSubscriptions error:", err);
@@ -106,7 +122,9 @@ export default function MySubscriptions() {
               {sub.plan_name}
             </h2>
             <p className="text-gray-700 mb-1">Next Payment: {sub.end_date}</p>
-            <p className="text-gray-700 mb-1">Price: {sub.pi_amount} Pi / month</p>
+            <p className="text-gray-700 mb-1">
+              Price: {sub.pi_amount} Pi / month
+            </p>
             <p className="text-gray-700 mb-2">Status: {sub.status}</p>
 
             {sub.status === "pending" && (
