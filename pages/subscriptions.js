@@ -16,7 +16,7 @@ export default function MySubscriptions() {
         }
 
         const authRes = await window.Pi.authenticate(
-          ["username"], // scopes, přidej další podle potřeby
+          ["username"], // scopes
           (incompletePayment) => {
             console.log("⚠️ Incomplete payment found:", incompletePayment);
           }
@@ -30,7 +30,7 @@ export default function MySubscriptions() {
         console.log("✅ Pi wallet authenticated:", authRes);
         setUserUid(authRes.user.uid);
 
-        // Nejprve najdeme Supabase user_id podle pi_uid
+        // Najdeme Supabase user_id podle pi_uid
         const { data: users, error: userError } = await supabase
           .from("users")
           .select("id")
@@ -44,17 +44,31 @@ export default function MySubscriptions() {
 
         const userId = users.id;
 
-        // Načteme předplatná z Supabase podle internal user_id
-        const { data, error } = await supabase
+        // Načteme subscriptions
+        const { data: subs, error: subsError } = await supabase
           .from("subscriptions")
           .select("id, plan_name, pi_amount, end_date, status")
           .eq("user_id", userId);
 
-        if (error) {
-          console.error("🔥 Supabase fetch subscriptions error:", error);
+        if (subsError) {
+          console.error("🔥 Supabase fetch subscriptions error:", subsError);
         } else {
-          console.log("📄 Subscriptions fetched:", data);
-          setSubscriptions(data);
+          console.log("📄 Subscriptions fetched:", subs);
+          setSubscriptions(subs);
+
+          // 🆕 Pro každé subscription načti payments
+          for (const sub of subs) {
+            const { data: payments, error: payError } = await supabase
+              .from("payments")
+              .select("id, subscription_id, status, payee_id, amount")
+              .eq("subscription_id", sub.id);
+
+            if (payError) {
+              console.error(`❌ Payments fetch error for subscription ${sub.id}:`, payError);
+            } else {
+              console.log(`💰 Payments for subscription ${sub.id}:`, payments);
+            }
+          }
         }
       } catch (err) {
         console.error("🔥 fetchSubscriptions error:", err);
@@ -68,6 +82,7 @@ export default function MySubscriptions() {
 
   const handleApprove = async (id) => {
     try {
+      console.log(`➡️ Approving subscription ${id}`);
       const { error } = await supabase
         .from("subscriptions")
         .update({ status: "active" })
@@ -76,6 +91,7 @@ export default function MySubscriptions() {
       if (error) {
         console.error("❌ Approve subscription error:", error);
       } else {
+        console.log(`✅ Subscription ${id} approved`);
         setSubscriptions(
           subscriptions.map((s) =>
             s.id === id ? { ...s, status: "active" } : s
@@ -89,12 +105,16 @@ export default function MySubscriptions() {
 
   const handleCancel = async (id) => {
     try {
+      console.log(`➡️ Cancelling subscription ${id}`);
       const { error } = await supabase
         .from("subscriptions")
         .update({ status: "cancelled" })
         .eq("id", id);
 
-      if (!error) {
+      if (error) {
+        console.error("❌ Cancel subscription error:", error);
+      } else {
+        console.log(`✅ Subscription ${id} cancelled`);
         setSubscriptions(subscriptions.filter((s) => s.id !== id));
       }
     } catch (err) {
