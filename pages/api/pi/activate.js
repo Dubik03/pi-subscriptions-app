@@ -1,3 +1,4 @@
+// pages/api/pi/activate.js
 import { supabase } from "../../../lib/supabase";
 
 export default async function handler(req, res) {
@@ -32,26 +33,60 @@ export default async function handler(req, res) {
     }
     debug.push("✅ Subscription updated to active");
 
-    // 2️⃣ Uvolnění všech payments (status = "released") s timestampem
-    const now = new Date().toISOString();
-    const { data: payments, error: payError, count } = await supabase
+    // 2️⃣ Najdeme všechny payments k subscription
+    const { data: paymentsList, error: listError } = await supabase
       .from("payments")
-      .update({
-        status: "released",
-        escrow_release_date: now // aktuální datum a čas
-      })
+      .select("id, service_id")
       .eq("subscription_id", subscriptionId)
-      .neq("status", "released")
-      .select("*", { count: "exact" });
+      .neq("status", "released");
 
-    if (payError) {
-      debug.push(`❌ Payments update error: ${payError.message}`);
-      throw payError;
+    if (listError) {
+      debug.push(`❌ Failed to fetch payments: ${listError.message}`);
+      throw listError;
     }
 
-    debug.push(`✅ Payments released successfully. Rows affected: ${count}`);
+    debug.push(`📌 Found ${paymentsList.length} payments to release.`);
 
-    res.status(200).json({ subscription, payments, debug });
+    const now = new Date().toISOString();
+    const releasedPayments = [];
+
+    // 3️⃣ Každou platbu updatneme se správným payee_id
+    for (const p of paymentsList) {
+      // najdeme service → owner_id
+      const { data: service, error: serviceError } = await supabase
+        .from("services")
+        .select("owner_id")
+        .eq("id", p.service_id)
+        .single();
+
+      if (serviceError) {
+        debug.push(`⚠️ Failed to fetch service for payment ${p.id}: ${serviceError.message}`);
+        continue; // přeskočíme, ale ostatní platby se zpracují
+      }
+
+      // update payment
+      const { data: updatedPayment, error: payError } = await supabase
+        .from("payments")
+        .update({
+          status: "released",
+          escrow_release_date: now,
+          payee_id: service.owner_id,
+        })
+        .eq("id", p.id)
+        .select()
+        .single();
+
+      if (payError) {
+        debug.push(`❌ Payment update error (id=${p.id}): ${payError.message}`);
+        continue;
+      }
+
+      releasedPayments.push(updatedPayment);
+    }
+
+    debug.push(`✅ Payments released successfully. Count: ${releasedPayments.length}`);
+
+    res.status(200).json({ subscription, payments: releasedPayments, debug });
   } catch (err) {
     debug.push(`🔥 Activate subscription error: ${err.message}`);
     res.status(500).json({ error: err.message, debug });
