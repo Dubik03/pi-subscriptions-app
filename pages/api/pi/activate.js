@@ -10,14 +10,13 @@ export default async function handler(req, res) {
   }
 
   const { subscriptionId } = req.body;
-
   if (!subscriptionId) {
     debug.push("❌ Missing subscriptionId");
     return res.status(400).json({ error: "Missing subscriptionId", debug });
   }
 
   try {
-    debug.push(`🔹 Activating subscription and payments for subscriptionId=${subscriptionId}...`);
+    debug.push(`🔹 Activating subscription ${subscriptionId}...`);
 
     // 1️⃣ Aktualizace statusu subscription na "active"
     const { data: subscription, error: subError } = await supabase
@@ -33,7 +32,7 @@ export default async function handler(req, res) {
     }
     debug.push("✅ Subscription updated to active");
 
-    // 2️⃣ Najdeme všechny payments k subscription
+    // 2️⃣ Najdeme všechny payments k subscription, které ještě nejsou uvolněné
     const { data: paymentsList, error: listError } = await supabase
       .from("payments")
       .select("id, service_id")
@@ -50,18 +49,18 @@ export default async function handler(req, res) {
     const now = new Date().toISOString();
     const releasedPayments = [];
 
-    // 3️⃣ Každou platbu updatneme se správným payee_id
-    for (const p of paymentsList) {
-      // najdeme service → owner_id
+    // 3️⃣ Aktualizujeme každou platbu: status = released, escrow_release_date, payee_id
+    for (const payment of paymentsList) {
+      // získáme owner_id služby
       const { data: service, error: serviceError } = await supabase
         .from("services")
         .select("owner_id")
-        .eq("id", p.service_id)
+        .eq("id", payment.service_id)
         .single();
 
-      if (serviceError) {
-        debug.push(`⚠️ Failed to fetch service for payment ${p.id}: ${serviceError.message}`);
-        continue; // přeskočíme, ale ostatní platby se zpracují
+      if (serviceError || !service) {
+        debug.push(`⚠️ Failed to fetch service for payment ${payment.id}: ${serviceError?.message}`);
+        continue;
       }
 
       // update payment
@@ -72,12 +71,12 @@ export default async function handler(req, res) {
           escrow_release_date: now,
           payee_id: service.owner_id,
         })
-        .eq("id", p.id)
+        .eq("id", payment.id)
         .select()
         .single();
 
       if (payError) {
-        debug.push(`❌ Payment update error (id=${p.id}): ${payError.message}`);
+        debug.push(`❌ Payment update error (id=${payment.id}): ${payError.message}`);
         continue;
       }
 
