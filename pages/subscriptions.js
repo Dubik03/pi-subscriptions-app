@@ -10,14 +10,13 @@ export default function MySubscriptions() {
     const fetchSubscriptions = async () => {
       try {
         console.log("⚡ Attempting Pi SDK authentication...");
-
         if (!window.Pi || !window.Pi.authenticate) {
           console.error("❌ Pi SDK not loaded or authenticate() missing");
           return;
         }
 
         const authRes = await window.Pi.authenticate(
-          ["username"], // scopes
+          ["username"], // scopes, přidej další podle potřeby
           (incompletePayment) => {
             console.log("⚠️ Incomplete payment found:", incompletePayment);
           }
@@ -31,32 +30,31 @@ export default function MySubscriptions() {
         console.log("✅ Pi wallet authenticated:", authRes);
         setUserUid(authRes.user.uid);
 
-        // 1️⃣ Najdeme interní Supabase ID podle pi_uid
-        const { data: userData, error: userError } = await supabase
+        // Nejprve najdeme Supabase user_id podle pi_uid
+        const { data: users, error: userError } = await supabase
           .from("users")
           .select("id")
           .eq("pi_uid", authRes.user.uid)
           .single();
 
-        if (userError || !userData) {
-          console.error("❌ User not found in Supabase:", userError);
-          setLoading(false);
+        if (userError || !users) {
+          console.error("🔥 Supabase fetch user error:", userError);
           return;
         }
 
-        const userId = userData.id;
+        const userId = users.id;
 
-        // 2️⃣ Načteme předplatná podle interního user_id
-        const { data: subsData, error: subsError } = await supabase
+        // Načteme předplatná z Supabase podle internal user_id
+        const { data, error } = await supabase
           .from("subscriptions")
           .select("id, plan_name, pi_amount, end_date, status")
           .eq("user_id", userId);
 
-        if (subsError) {
-          console.error("🔥 Supabase fetch subscriptions error:", subsError);
+        if (error) {
+          console.error("🔥 Supabase fetch subscriptions error:", error);
         } else {
-          console.log("📄 Subscriptions fetched:", subsData);
-          setSubscriptions(subsData);
+          console.log("📄 Subscriptions fetched:", data);
+          setSubscriptions(data);
         }
       } catch (err) {
         console.error("🔥 fetchSubscriptions error:", err);
@@ -122,9 +120,7 @@ export default function MySubscriptions() {
               {sub.plan_name}
             </h2>
             <p className="text-gray-700 mb-1">Next Payment: {sub.end_date}</p>
-            <p className="text-gray-700 mb-1">
-              Price: {sub.pi_amount} Pi / month
-            </p>
+            <p className="text-gray-700 mb-1">Price: {sub.pi_amount} Pi / month</p>
             <p className="text-gray-700 mb-2">Status: {sub.status}</p>
 
             {sub.status === "pending" && (
@@ -136,12 +132,14 @@ export default function MySubscriptions() {
               </button>
             )}
 
-            <button
-              onClick={() => handleCancel(sub.id)}
-              className="px-6 py-2 bg-red-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform"
-            >
-              Cancel
-            </button>
+            {sub.status !== "cancelled" && (
+              <button
+                onClick={() => handleCancel(sub.id)}
+                className="px-6 py-2 bg-red-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         ))}
       </div>
