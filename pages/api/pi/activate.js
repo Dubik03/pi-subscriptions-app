@@ -7,16 +7,15 @@ export default async function handler(req, res) {
 
   const { subscriptionId, teacherWallet } = req.body;
   if (!subscriptionId || !teacherWallet)
-    return res
-      .status(400)
-      .json({ error: "Missing subscriptionId or teacherWallet" });
+    return res.status(400).json({ error: "Missing subscriptionId or teacherWallet" });
+
+  const debug = []; // sběr logů
 
   try {
-    console.log("🔄 Activating subscription:", subscriptionId);
-    console.log("👨‍🏫 Teacher wallet to release to:", teacherWallet);
+    debug.push(`🔹 Starting activate for subscriptionId=${subscriptionId}`);
 
     // 1️⃣ Update subscription status
-    console.log("📝 Updating subscription status -> active");
+    debug.push("➡️ Updating subscription status to active...");
     const { data: subscription, error: subError } = await supabase
       .from("subscriptions")
       .update({ status: "active" })
@@ -25,13 +24,13 @@ export default async function handler(req, res) {
       .single();
 
     if (subError) {
-      console.error("❌ Failed to update subscription:", subError);
+      debug.push(`❌ Subscription update error: ${subError.message}`);
       throw subError;
     }
-    console.log("✅ Subscription activated:", subscription);
+    debug.push("✅ Subscription updated successfully");
 
     // 2️⃣ Uvolníme platbu z escrow na učitele
-    console.log("📝 Releasing payment from escrow -> teacher");
+    debug.push("➡️ Releasing payment from escrow...");
     const { data: payment, error: payError } = await supabase
       .from("payments")
       .update({
@@ -43,19 +42,20 @@ export default async function handler(req, res) {
       .single();
 
     if (payError) {
-      console.error("❌ Failed to release payment:", payError);
+      debug.push(`❌ Payment update error: ${payError.message}`);
       throw payError;
     }
 
     if (!payment) {
-      console.warn("⚠️ No payment found for subscription:", subscriptionId);
+      debug.push("⚠️ No payment found for this subscription!");
     } else {
-      console.log("✅ Payment released:", payment);
+      debug.push("✅ Payment released successfully");
     }
 
-    res.status(200).json({ subscription, payment });
+    // 📤 Response do frontendu
+    res.status(200).json({ subscription, payment, debug });
   } catch (err) {
-    console.error("🔥 Activate subscription error:", err);
-    res.status(500).json({ error: err.message });
+    debug.push(`🔥 Activate subscription error: ${err.message}`);
+    res.status(500).json({ error: err.message, debug });
   }
 }
