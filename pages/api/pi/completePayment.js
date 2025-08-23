@@ -33,19 +33,15 @@ export default async function handler(req, res) {
 
     const completeData = await completeRes.json();
 
-    // 🪙 Log peněženek
     const payerWallet =
       completeData?.payer?.wallet_address ||
       completeData?.from_address ||
       "unknown";
-    const developerWallet =
-      completeData?.developer?.wallet_address ||
-      completeData?.to_address ||
-      "unknown";
+    const escrowWallet = "22222222-2222-2222-2222-222222222222";
 
     console.log("📥 Pi API /complete response:", completeData);
     console.log(
-      `💸 Payment flow: ${payerWallet}  --->  ${developerWallet} (amount: ${completeData?.amount})`
+      `💸 Payment flow: ${payerWallet}  --->  ${escrowWallet} (amount: ${completeData?.amount})`
     );
 
     if (!completeRes.ok) {
@@ -55,7 +51,7 @@ export default async function handler(req, res) {
         .json({ error: completeData.error || "Pi complete failed" });
     }
 
-    // 2️⃣ Vytvoříme subscription
+    // 2️⃣ Vytvoříme subscription s pending
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + 30);
 
@@ -69,20 +65,16 @@ export default async function handler(req, res) {
           plan_name: planName || "Pi subscription",
           pi_amount: completeData.amount,
           end_date: endDate.toISOString().split("T")[0],
-          status: "pending", // ❗ vytvoříme s pending
+          status: "pending",
         },
       ])
       .select()
       .single();
 
-    if (subError) {
-      console.error("❌ Supabase subscription insert error:", subError);
-      throw subError;
-    }
+    if (subError) throw subError;
     console.log("✅ Subscription created:", subscription);
 
-    // 3️⃣ Update payment → released + wallet adresy + teacher_id_final
-    console.log("📝 Updating payment record in Supabase...");
+    // 3️⃣ Update payment → released + wallet + teacher
     const { data: payment, error: payError } = await supabase
       .from("payments")
       .update({
@@ -90,31 +82,23 @@ export default async function handler(req, res) {
         subscription_id: subscription.id,
         txid,
         from_wallet: payerWallet,
-        to_wallet: developerWallet,
-        payee_teacher_id: teacherId, // nový sloupec
+        to_wallet: escrowWallet,
+        payee_teacher_id: teacherId,
       })
       .eq("pi_payment_id", paymentId)
       .select()
       .single();
 
-    if (payError) {
-      console.error("❌ Supabase payment update error:", payError);
-      throw payError;
-    }
+    if (payError) throw payError;
     console.log("✅ Payment updated:", payment);
 
-    // 4️⃣ Update user's wallet address pokud ještě není uložená
-    console.log("🔄 Updating user's wallet address if missing...");
+    // 4️⃣ Update student wallet
     const { error: userUpdateError } = await supabase
       .from("users")
       .update({ wallet_address: payerWallet })
       .eq("id", studentId);
 
-    if (userUpdateError) {
-      console.error("⚠️ Failed to update user wallet address:", userUpdateError);
-    } else {
-      console.log("✅ User wallet address updated (if it was missing).");
-    }
+    if (userUpdateError) console.error("⚠️ Failed to update user wallet:", userUpdateError);
 
     res.status(200).json({ subscription, payment, pi: completeData });
   } catch (err) {
