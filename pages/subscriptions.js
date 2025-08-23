@@ -44,10 +44,10 @@ export default function MySubscriptions() {
 
         const userId = users.id;
 
-        // Načteme subscriptions
+        // Načteme subscriptions + rovnou teacherWallet
         const { data: subs, error: subsError } = await supabase
           .from("subscriptions")
-          .select("id, plan_name, pi_amount, end_date, status")
+          .select("id, plan_name, pi_amount, end_date, status, teacher_wallet")
           .eq("user_id", userId);
 
         if (subsError) {
@@ -80,24 +80,33 @@ export default function MySubscriptions() {
     fetchSubscriptions();
   }, []);
 
-  const handleApprove = async (id) => {
+  const handleApprove = async (id, teacherWallet) => {
     try {
-      console.log(`➡️ Approving subscription ${id}`);
-      const { error } = await supabase
-        .from("subscriptions")
-        .update({ status: "active" })
-        .eq("id", id);
+      console.log(`➡️ Approving subscription ${id} via /api/activate`);
 
-      if (error) {
-        console.error("❌ Approve subscription error:", error);
-      } else {
-        console.log(`✅ Subscription ${id} approved`);
-        setSubscriptions(
-          subscriptions.map((s) =>
-            s.id === id ? { ...s, status: "active" } : s
-          )
-        );
+      const res = await fetch("/api/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subscriptionId: id,
+          teacherWallet: teacherWallet,
+        }),
+      });
+
+      const result = await res.json();
+      console.log("📡 Activate API response:", result);
+
+      if (!res.ok) {
+        console.error("❌ Activate API error:", result.error, result.debug);
+        return;
       }
+
+      // update local state
+      setSubscriptions(
+        subscriptions.map((s) =>
+          s.id === id ? { ...s, status: "active" } : s
+        )
+      );
     } catch (err) {
       console.error("🔥 handleApprove error:", err);
     }
@@ -145,7 +154,7 @@ export default function MySubscriptions() {
 
             {sub.status === "pending" && (
               <button
-                onClick={() => handleApprove(sub.id)}
+                onClick={() => handleApprove(sub.id, sub.teacher_wallet)}
                 className="px-6 py-2 bg-green-500 text-white rounded-xl shadow hover:scale-105 transform transition-transform mr-2"
               >
                 Approve Payment
