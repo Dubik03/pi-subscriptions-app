@@ -1,4 +1,4 @@
-// pages/api/activate.js
+// pages/api/pi/activate.js
 import { supabase } from "../../../lib/supabase";
 
 export default async function handler(req, res) {
