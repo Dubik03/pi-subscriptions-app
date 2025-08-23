@@ -7,21 +7,33 @@ export default function MySubscriptions({ Pi }) {
 
   useEffect(() => {
     const fetchSubscriptions = async () => {
-      if (!Pi) return;
+      console.log("🟢 fetchSubscriptions started");
+
+      if (!Pi) {
+        console.warn("⚠️ Pi SDK not loaded yet");
+        setLoading(false);
+        return;
+      }
 
       try {
-        const auth = await Pi.authenticate(); // aktuální Pi uživatel
+        console.log("🔑 Authenticating Pi user...");
+        const auth = await Pi.authenticate();
+        console.log("✅ Pi auth success:", auth);
+
         const piUid = auth.user.uid;
+        console.log("📌 Current Pi UID:", piUid);
 
         const { data, error } = await supabase
           .from('subscriptions')
           .select('id, plan_name, pi_amount, end_date, status, payment_id, teacher_id')
           .eq('user_id', piUid);
 
-        if (!error) setSubscriptions(data);
-        else console.error("Error fetching subscriptions:", error);
+        if (error) console.error("❌ Supabase fetch error:", error);
+        else console.log("📥 Subscriptions fetched:", data);
+
+        setSubscriptions(data || []);
       } catch (err) {
-        console.error("Pi auth error:", err);
+        console.error("🔥 Pi fetchSubscriptions error:", err);
       }
 
       setLoading(false);
@@ -31,11 +43,11 @@ export default function MySubscriptions({ Pi }) {
   }, [Pi]);
 
   const handleApprove = async (subscription) => {
+    console.log("⚡ handleApprove clicked:", subscription);
     try {
       const { payment_id, teacher_id, id } = subscription;
       if (!payment_id) throw new Error("Missing payment ID");
 
-      // Zavoláme backend endpoint pro uvolnění platby
       const res = await fetch('/api/pi/releasePayment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -45,7 +57,6 @@ export default function MySubscriptions({ Pi }) {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      // Aktualizujeme status v tabulce subscriptions
       const { error: updateError } = await supabase
         .from('subscriptions')
         .update({ status: 'active' })
@@ -54,8 +65,9 @@ export default function MySubscriptions({ Pi }) {
       if (updateError) throw updateError;
 
       setSubscriptions(subs => subs.map(s => s.id === id ? { ...s, status: 'active' } : s));
+      console.log("✅ Subscription status updated to active");
     } catch (err) {
-      console.error("Approve payment error:", err);
+      console.error("🔥 Approve payment error:", err);
       alert("Chyba při uvolnění platby: " + err.message);
     }
   };
