@@ -2,11 +2,14 @@
 import { supabase } from "../../../lib/supabase";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST")
-    return res.status(405).json({ error: "Method not allowed" });
+  const debug = []; // sběr logů
+
+  if (req.method !== "POST") {
+    debug.push("❌ Method not allowed");
+    return res.status(405).json({ error: "Method not allowed", debug });
+  }
 
   const { subscriptionId, teacherWallet } = req.body;
-  const debug = []; // sběr logů pro frontend
 
   if (!subscriptionId || !teacherWallet) {
     debug.push("❌ Missing subscriptionId or teacherWallet");
@@ -31,45 +34,44 @@ export default async function handler(req, res) {
     }
     debug.push("✅ Subscription updated successfully");
 
-    // 1.5️⃣ Fetch payments před aktualizací
-    const { data: existingPayments, error: fetchError } = await supabase
+    // 2️⃣ Fetch all payments before update
+    debug.push("➡️ Fetching all payments for this subscription...");
+    const { data: paymentsBefore, error: fetchError } = await supabase
       .from("payments")
       .select("*")
       .eq("subscription_id", subscriptionId);
 
-    debug.push(`ℹ️ Found payments before update: ${existingPayments?.length || 0}`);
-    if (existingPayments?.length > 0) {
-      debug.push(`📝 Payment IDs: ${existingPayments.map(p => p.id).join(", ")}`);
-    }
-
     if (fetchError) {
-      debug.push(`❌ Error fetching payments before update: ${fetchError.message}`);
+      debug.push(`⚠️ Error fetching payments: ${fetchError.message}`);
+    } else {
+      debug.push(`📄 Payments before release: ${JSON.stringify(paymentsBefore, null, 2)}`);
     }
 
-    // 2️⃣ Release payments to teacher
+    // 3️⃣ Update all payments for this subscription
     debug.push("➡️ Releasing all payments from escrow to teacherWallet...");
-    const { data: payments, error: payError } = await supabase
+    const { data: paymentsAfter, error: payError } = await supabase
       .from("payments")
       .update({
         status: "released",
         payee_id: teacherWallet
       })
       .eq("subscription_id", subscriptionId)
-      .select(); // vrátí pole všech paymentů
+      .select(); // získáme pole všech paymentů
 
     if (payError) {
       debug.push(`❌ Payment update error: ${payError.message}`);
       throw payError;
     }
 
-    if (!payments || payments.length === 0) {
+    if (!paymentsAfter || paymentsAfter.length === 0) {
       debug.push("⚠️ No payments found for this subscription!");
     } else {
-      debug.push(`✅ Payments released successfully: ${payments.length} payment(s) updated`);
+      debug.push(`✅ Payments released successfully: ${paymentsAfter.length} payment(s) updated`);
+      debug.push(`📄 Payments after release: ${JSON.stringify(paymentsAfter, null, 2)}`);
     }
 
-    // 📤 Odeslání výsledku do frontendu
-    res.status(200).json({ subscription, payments, debug });
+    // 📤 Response do frontendu
+    res.status(200).json({ subscription, payments: paymentsAfter, debug });
   } catch (err) {
     debug.push(`🔥 Activate subscription error: ${err.message}`);
     res.status(500).json({ error: err.message, debug });
