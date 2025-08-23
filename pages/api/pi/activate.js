@@ -32,11 +32,14 @@ export default async function handler(req, res) {
     }
     debug.push("✅ Subscription updated to active");
 
-    // 2️⃣ Uvolnění všech payments (status = "released")
+    // 2️⃣ Uvolnění všech payments (status = "released") s timestampem
+    const now = new Date().toISOString();
     const { data: payments, error: payError, count } = await supabase
       .from("payments")
-      .update({ status: "released" })
-       escrow_release_date: new Date().toISOString() // aktuální datum a čas
+      .update({
+        status: "released",
+        escrow_release_date: now // aktuální datum a čas
+      })
       .eq("subscription_id", subscriptionId)
       .neq("status", "released")
       .select("*", { count: "exact" });
