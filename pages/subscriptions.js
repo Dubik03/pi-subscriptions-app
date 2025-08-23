@@ -22,26 +22,19 @@ export default function MySubscriptions() {
           }
         );
 
-        const authRes = await window.Pi.authenticate(
-  ["username"], 
-  (incompletePayment) => {
-    console.log("⚠️ Incomplete payment found:", incompletePayment);
-  }
-);
+        if (!authRes || !authRes.user || !authRes.user.uid) {
+          console.error("❌ Authentication failed:", authRes);
+          return;
+        }
 
-if (!authRes || !authRes.user || !authRes.user.uid) {
-  console.error("❌ Authentication failed:", authRes);
-  return;
-}
-
-console.log("✅ Pi wallet authenticated:", authRes);
-setUserUid(authRes.user.uid);
+        console.log("✅ Pi wallet authenticated:", authRes);
+        setUserUid(authRes.user.uid);
 
         // Načteme předplatná z Supabase podle UID
         const { data, error } = await supabase
           .from("subscriptions")
           .select("id, plan_name, pi_amount, end_date, status")
-          .eq("user_id", authRes.uid);
+          .eq("user_id", authRes.user.uid);
 
         if (error) {
           console.error("🔥 Supabase fetch subscriptions error:", error);
