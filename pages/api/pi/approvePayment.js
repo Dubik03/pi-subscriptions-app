@@ -5,10 +5,10 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
-  const { paymentId, service, studentId, teacherId } = req.body;
+  const { paymentId, serviceId, studentId } = req.body;
   console.log("ApprovePayment request body:", req.body);
 
-  if (!paymentId || !studentId || !teacherId) {
+  if (!paymentId || !studentId || !serviceId) {
     return res.status(400).json({ error: "Missing required params" });
   }
 
@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   if (!PI_API_KEY) return res.status(500).json({ error: "Missing PI_API_KEY" });
 
   try {
-    // 1️⃣ Zavoláme Pi API
+    // 1️⃣ Zavoláme Pi API approve
     const approveRes = await fetch(
       `https://api.minepi.com/v2/payments/${paymentId}/approve`,
       {
@@ -37,15 +37,28 @@ export default async function handler(req, res) {
         .json({ error: approveData.error || "Pi approve failed" });
     }
 
-    // 2️⃣ Uložíme do Supabase
+    // 2️⃣ Najdeme službu v Supabase, abychom zjistili komu patří
+    const { data: service, error: serviceError } = await supabase
+      .from("services")
+      .select("id, price, owner_id")
+      .eq("id", serviceId)
+      .single();
+
+    if (serviceError || !service) {
+      console.error("Service fetch error:", serviceError);
+      return res.status(404).json({ error: "Service not found" });
+    }
+
+    // 3️⃣ Uložíme payment do Supabase
     const { data, error } = await supabase
       .from("payments")
       .insert([
         {
           pi_payment_id: paymentId,
           payer_id: studentId,
-          payee_id: "22222222-2222-2222-2222-222222222222", // escrow účet
-          pi_amount: service?.price || approveData.amount,
+          payee_id: service.owner_id, // 💰 příjemce = majitel služby
+          service_id: service.id,
+          pi_amount: service.price || approveData.amount,
           status: "pending",
         },
       ])
