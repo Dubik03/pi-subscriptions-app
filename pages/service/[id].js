@@ -1,8 +1,7 @@
-// pages/services/[id].js
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
-import { supabase } from "../../lib/supabase"; // přidat import
+import { supabase } from "../../lib/supabase";
 
 export default function ServiceDetail() {
   const router = useRouter();
@@ -12,7 +11,6 @@ export default function ServiceDetail() {
   const [message, setMessage] = useState("");
   const [Pi, setPi] = useState(null);
 
-  // ✅ Načteme službu z DB
   useEffect(() => {
     if (!id) return;
     const fetchService = async () => {
@@ -21,18 +19,12 @@ export default function ServiceDetail() {
         .select("id, name, price, description, owner_id")
         .eq("id", id)
         .single();
-
-      if (error) {
-        console.error("Service fetch error:", error);
-        setMessage("Service not found");
-      } else {
-        setService(data);
-      }
+      if (!error) setService(data);
+      else console.error("Error loading service:", error);
     };
     fetchService();
   }, [id]);
 
-  // ✅ Inicializace Pi SDK
   useEffect(() => {
     if (typeof window !== "undefined") {
       const initPi = () => {
@@ -54,7 +46,7 @@ export default function ServiceDetail() {
     }
   }, []);
 
-  if (!service) return <p className="text-center mt-10 text-red-500">Loading service...</p>;
+  if (!service) return <p className="text-center mt-10 text-red-500">Service not found</p>;
 
   const handleSubscribe = async () => {
     if (!Pi) {
@@ -66,9 +58,10 @@ export default function ServiceDetail() {
     setMessage("");
 
     try {
-      // 🔑 Autentizace
+      // 1️⃣ Pi Auth
       const auth = await Pi.authenticate(["payments"]);
       const piUser = auth.user;
+      console.log("🔑 Pi Auth User:", piUser);
 
       const uid = piUser?.uid;
       if (!uid) throw new Error("Missing uid from Pi Auth");
@@ -79,7 +72,7 @@ export default function ServiceDetail() {
         piUser?.wallet_address ||
         `sandbox-wallet-${uid.slice(0, 6)}`;
 
-      // 👤 Sync user
+      // 2️⃣ Sync user do Supabase
       const userRes = await fetch("/api/pi/syncUser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -89,7 +82,7 @@ export default function ServiceDetail() {
       if (userData.error) throw new Error(userData.error);
       const userId = userData.id;
 
-      // 💸 Vytvoření platby přes Pi SDK
+      // 3️⃣ Pi payment + napojení na service_id a owner_id
       await Pi.createPayment(
         {
           amount: service.price,
@@ -97,26 +90,31 @@ export default function ServiceDetail() {
           metadata: {
             planName: service.name,
             studentId: userId,
-            serviceId: service.id,        // ✅ místo teacherId
-            ownerId: service.owner_id,    // ✅ učitel z DB
+            serviceId: service.id,
+            teacherId: service.owner_id,
           },
         },
         {
           onReadyForServerApproval: async (paymentId) => {
             setMessage(`Payment ready for approval: ${paymentId}`);
-            await fetch("/api/pi/approvePayment", {
+            const res = await fetch("/api/pi/approvePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 paymentId,
                 studentId: userId,
                 serviceId: service.id,
+                teacherId: service.owner_id,
               }),
             });
+            const data = await res.json();
+            if (data.error) setMessage("Approve error: " + data.error);
+            else setMessage(`Payment approved and stored! Payment ID: ${paymentId}`);
           },
+
           onReadyForServerCompletion: async (paymentId, txid) => {
-            setMessage(`Completing payment: ${paymentId}`);
-            await fetch("/api/pi/completePayment", {
+            setMessage(`Completing payment: ${paymentId}, txid: ${txid}`);
+            const res = await fetch("/api/pi/completePayment", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -124,9 +122,15 @@ export default function ServiceDetail() {
                 txid,
                 studentId: userId,
                 serviceId: service.id,
+                teacherId: service.owner_id,
+                planName: service.name,
               }),
             });
+            const data = await res.json();
+            if (data.error) setMessage("Complete error: " + data.error);
+            else setMessage(`Payment completed! Subscription ID: ${data.subscription.id}`);
           },
+
           onCancel: () => setMessage("Payment canceled by user"),
           onError: (err) => setMessage("Payment error: " + err.message),
         }
@@ -153,6 +157,10 @@ export default function ServiceDetail() {
         >
           {loading ? "Probíhá..." : "Subscribe Now"}
         </button>
+
+        <p className="mt-3 text-yellow-700">
+          ⚠️ Sandbox režim je aktivní – můžete testovat v běžném prohlížeči.
+        </p>
 
         <Link href="/subscriptions">
           <button className="px-6 py-2 bg-gray-300 rounded-xl shadow hover:scale-105 transform transition-transform mt-3">
