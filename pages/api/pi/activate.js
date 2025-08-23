@@ -36,6 +36,7 @@ export default async function handler(req, res) {
     const { data: payments, error: payError, count } = await supabase
       .from("payments")
       .update({ status: "released" })
+       escrow_release_date: new Date().toISOString() // aktuální datum a čas
       .eq("subscription_id", subscriptionId)
       .neq("status", "released")
       .select("*", { count: "exact" });
