@@ -20,7 +20,7 @@ export default async function handler(req, res) {
 
     const { data, error, count } = await supabase
       .from("payments")
-      .update({ status: "active" })
+      .update({ status: "released" })
       .eq("subscription_id", subscriptionId)
       .select("*", { count: "exact" });
 
