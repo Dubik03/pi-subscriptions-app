@@ -55,4 +55,14 @@ export default async function handler(req, res) {
 
     if (error) {
       console.error("Supabase insert error:", error);
-      return res.status(50
+      return res.status(500).json({ error: error.message });
+    }
+
+    console.log("Payment inserted into Supabase:", data);
+
+    res.status(200).json({ payment: data, pi: approveData });
+  } catch (err) {
+    console.error("ApprovePayment error:", err);
+    res.status(500).json({ error: err.message });
+  }
+}
