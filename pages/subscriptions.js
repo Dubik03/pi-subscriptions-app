@@ -100,8 +100,8 @@ export default function MySubscriptions() {
 
   const handleApprove = async (id, teacherWallet) => {
     try {
-      console.log(`➡️ Approving subscription ${id} via /api/activate`);
-      const res = await fetch("/api/activate", {
+      console.log(`➡️ Approving subscription ${id} via /api/pi/activate`);
+      const res = await fetch("/api/pi/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
