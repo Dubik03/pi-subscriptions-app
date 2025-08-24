@@ -1,3 +1,5 @@
+// /pages/api/pi/activate.js
+
 import { supabase } from "../../../lib/supabase";
 
 const SEND_PAYOUTS = true; // true = posílat hned, false = pouze označit jako released
