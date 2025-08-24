@@ -93,6 +93,8 @@ export default function MySubscriptions() {
           console.log(`💰 Payment released: id=${p.id}, payee_id=${p.payee_id}`);
           if (p.payoutResult) {
             console.log("💸 Payout response:", p.payoutResult);
+          } else {
+            console.log("⚠️ Payout not sent or failed");
           }
         });
       }
