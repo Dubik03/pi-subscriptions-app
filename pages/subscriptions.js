@@ -30,7 +30,6 @@ export default function MySubscriptions() {
         console.log("✅ Pi wallet authenticated:", authRes);
         setUserUid(authRes.user.uid);
 
-        // Najdeme Supabase user_id podle pi_uid
         const { data: user, error: userError } = await supabase
           .from("users")
           .select("id")
@@ -44,7 +43,6 @@ export default function MySubscriptions() {
 
         const userId = user.id;
 
-        // Načteme subscriptions
         const { data: subs, error: subsError } = await supabase
           .from("subscriptions")
           .select("id, plan_name, pi_amount, end_date, status")
@@ -84,7 +82,21 @@ export default function MySubscriptions() {
         return;
       }
 
-      // Aktualizace stavu lokálně
+      if (result.debug && result.debug.length) {
+        console.groupCollapsed(`📜 Debug info for subscription ${subscriptionId}`);
+        result.debug.forEach((line) => console.log(line));
+        console.groupEnd();
+      }
+
+      if (result.payments && result.payments.length) {
+        result.payments.forEach((p) => {
+          console.log(`💰 Payment released: id=${p.id}, payee_id=${p.payee_id}`);
+          if (p.payoutResult) {
+            console.log("💸 Payout response:", p.payoutResult);
+          }
+        });
+      }
+
       setSubscriptions(
         subscriptions.map((s) =>
           s.id === subscriptionId ? { ...s, status: "active" } : s
