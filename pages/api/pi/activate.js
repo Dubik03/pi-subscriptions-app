@@ -1,6 +1,8 @@
 // pages/api/pi/activate.js
 import { supabase } from "../../../lib/supabase";
 
+const SEND_PAYOUTS = true; // true = posílat hned, false = pouze označit jako released
+
 export default async function handler(req, res) {
   const debug = [];
 
@@ -81,6 +83,21 @@ export default async function handler(req, res) {
       }
 
       releasedPayments.push(updatedPayment);
+
+      // 4️⃣ Volání payout endpointu, pokud je přepínač aktivní
+    if (SEND_PAYOUTS) {
+      try {
+        const payoutRes = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/api/pi/payoutPending`, {
+          method: "POST",
+           headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paymentId: updatedPayment.id }),
+        });
+        const payoutResult = await payoutRes.json();
+        debug.push(`💸 Payout attempted for payment ${updatedPayment.id}: ${JSON.stringify(payoutResult)}`);
+      } catch (err) {
+        debug.push(`⚠️ Payout error for payment ${updatedPayment.id}: ${err.message}`);
+      }
+      }
     }
 
     debug.push(`✅ Payments released successfully. Count: ${releasedPayments.length}`);
