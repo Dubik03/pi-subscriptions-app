@@ -53,7 +53,6 @@ export default async function handler(req, res) {
 
     // 3️⃣ Aktualizujeme každou platbu: status = released, escrow_release_date, payee_id
     for (const payment of paymentsList) {
-      // získáme owner_id služby
       const { data: service, error: serviceError } = await supabase
         .from("services")
         .select("owner_id")
@@ -65,7 +64,6 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // update payment
       const { data: updatedPayment, error: payError } = await supabase
         .from("payments")
         .update({
@@ -82,22 +80,24 @@ export default async function handler(req, res) {
         continue;
       }
 
-      releasedPayments.push(updatedPayment);
+      // Přidáme payoutResult k aktualizované platbě
+      let payoutResult = null;
 
-      // 4️⃣ Volání payout endpointu, pokud je přepínač aktivní
-    if (SEND_PAYOUTS) {
-      try {
-        const payoutRes = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/api/pi/payoutPending`, {
-          method: "POST",
-           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ paymentId: updatedPayment.id }),
-        });
-        const payoutResult = await payoutRes.json();
-        debug.push(`💸 Payout attempted for payment ${updatedPayment.id}: ${JSON.stringify(payoutResult)}`);
-      } catch (err) {
-        debug.push(`⚠️ Payout error for payment ${updatedPayment.id}: ${err.message}`);
+      if (SEND_PAYOUTS) {
+        try {
+          const payoutRes = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/api/pi/payoutPending`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paymentId: updatedPayment.id }),
+          });
+          payoutResult = await payoutRes.json();
+          debug.push(`💸 Payout attempted for payment ${updatedPayment.id}: ${JSON.stringify(payoutResult)}`);
+        } catch (err) {
+          debug.push(`⚠️ Payout error for payment ${updatedPayment.id}: ${err.message}`);
+        }
       }
-      }
+
+      releasedPayments.push({ ...updatedPayment, payoutResult });
     }
 
     debug.push(`✅ Payments released successfully. Count: ${releasedPayments.length}`);
