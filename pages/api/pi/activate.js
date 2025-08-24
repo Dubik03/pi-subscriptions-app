@@ -1,4 +1,3 @@
-// pages/api/pi/activate.js
 import { supabase } from "../../../lib/supabase";
 
 const SEND_PAYOUTS = true; // true = posílat hned, false = pouze označit jako released
@@ -20,7 +19,6 @@ export default async function handler(req, res) {
   try {
     debug.push(`🔹 Activating subscription ${subscriptionId}...`);
 
-    // 1️⃣ Aktualizace statusu subscription na "active"
     const { data: subscription, error: subError } = await supabase
       .from("subscriptions")
       .update({ status: "active" })
@@ -34,7 +32,6 @@ export default async function handler(req, res) {
     }
     debug.push("✅ Subscription updated to active");
 
-    // 2️⃣ Najdeme všechny payments k subscription, které ještě nejsou uvolněné
     const { data: paymentsList, error: listError } = await supabase
       .from("payments")
       .select("id, service_id")
@@ -51,7 +48,6 @@ export default async function handler(req, res) {
     const now = new Date().toISOString();
     const releasedPayments = [];
 
-    // 3️⃣ Aktualizujeme každou platbu: status = released, escrow_release_date, payee_id
     for (const payment of paymentsList) {
       const { data: service, error: serviceError } = await supabase
         .from("services")
@@ -80,7 +76,6 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // Přidáme payoutResult k aktualizované platbě
       let payoutResult = null;
 
       if (SEND_PAYOUTS) {
@@ -90,7 +85,14 @@ export default async function handler(req, res) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ paymentId: updatedPayment.id }),
           });
-          payoutResult = await payoutRes.json();
+
+          try {
+            payoutResult = await payoutRes.json();
+          } catch (jsonErr) {
+            const text = await payoutRes.text();
+            payoutResult = { error: "Invalid JSON response", body: text };
+          }
+
           debug.push(`💸 Payout attempted for payment ${updatedPayment.id}: ${JSON.stringify(payoutResult)}`);
         } catch (err) {
           debug.push(`⚠️ Payout error for payment ${updatedPayment.id}: ${err.message}`);
@@ -101,7 +103,6 @@ export default async function handler(req, res) {
     }
 
     debug.push(`✅ Payments released successfully. Count: ${releasedPayments.length}`);
-
     res.status(200).json({ subscription, payments: releasedPayments, debug });
   } catch (err) {
     debug.push(`🔥 Activate subscription error: ${err.message}`);
