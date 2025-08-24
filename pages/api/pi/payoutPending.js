@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     // 1️⃣ Najdeme všechny platby k vyplacení
     const { data: payments, error: payError } = await supabase
       .from("payments")
-      .select("id, pi_amount, payee_id, pi_payment_id, tx_id, status")
+      .select("id, pi_amount, payee_id, pi_payment_id, txid, status")
       .eq("status", "pending"); // čekají na Payment Request
 
     if (payError) throw payError;
