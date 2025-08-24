@@ -1,5 +1,3 @@
-//pages/subscriptions.js
-
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 
@@ -17,14 +15,11 @@ export default function MySubscriptions() {
           return;
         }
 
-        const authRes = await window.Pi.authenticate(
-          ["username"],
-          (incompletePayment) => {
-            console.log("⚠️ Incomplete payment found:", incompletePayment);
-          }
-        );
+        const authRes = await window.Pi.authenticate(["username"], (incompletePayment) => {
+          console.log("⚠️ Incomplete payment found:", incompletePayment);
+        });
 
-        if (!authRes || !authRes.user || !authRes.user.uid) {
+        if (!authRes?.user?.uid) {
           console.error("❌ Authentication failed:", authRes);
           return;
         }
@@ -44,7 +39,6 @@ export default function MySubscriptions() {
         }
 
         const userId = user.id;
-
         const { data: subs, error: subsError } = await supabase
           .from("subscriptions")
           .select("id, plan_name, pi_amount, end_date, status")
@@ -69,7 +63,7 @@ export default function MySubscriptions() {
 
   const handleApprove = async (subscriptionId) => {
     try {
-      console.log(`➡️ Activating payments for subscription ${subscriptionId}`);
+      console.log(`➡️ Activating subscription ${subscriptionId}...`);
       const res = await fetch("/api/pi/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -84,37 +78,62 @@ export default function MySubscriptions() {
         return;
       }
 
-      if (result.debug && result.debug.length) {
+      if (result.debug?.length) {
         console.groupCollapsed(`📜 Debug info for subscription ${subscriptionId}`);
         result.debug.forEach((line) => console.log(line));
         console.groupEnd();
       }
 
-      if (result.payments && result.payments.length) {
-        result.payments.forEach((p) => {
-          console.log(`💰 Payment released: id=${p.id}, payee_id=${p.payee_id}`);
+      // Phase II - otevřít Pi payment flow pro uživatele
+      if (window.Pi && window.Pi.createPayment) {
+        for (const p of result.payments) {
+          const piPayment = window.Pi.createPayment({
+            amount: p.pi_amount,
+            memo: `Payment for ${p.id}`,
+          });
 
-          if (p.payoutResult) {
-            console.log("💸 Payout response:", p.payoutResult);
+          piPayment.onReadyForServerApproval = async (paymentId) => {
+            console.log("📝 Server-side approval, paymentId:", paymentId);
+            // tu můžeš případně zavolat /api/pi/approve pokud používáš approve endpoint
+          };
 
-            // Pokud payoutResult obsahuje chybu, vypíšeme ji a raw body
-            if (p.payoutResult.error) {
-              console.warn("⚠️ Payout error detected:", p.payoutResult.error);
-              if (p.payoutResult.body) {
-                console.log("📄 Raw response body:", p.payoutResult.body);
+          piPayment.onReadyForServerCompletion = async (paymentId, txId) => {
+            console.log("📌 Server-side completion, paymentId:", paymentId, "txId:", txId);
+
+            try {
+              const payoutRes = await fetch("/api/pi/payoutPending", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ paymentId, txId }),
+              });
+
+              let payoutData;
+              try {
+                payoutData = await payoutRes.json();
+              } catch (jsonErr) {
+                const text = await payoutRes.text();
+                payoutData = { error: "Invalid JSON response", body: text };
               }
+
+              console.log("💸 Payout response:", payoutData);
+
+              if (payoutData.error) {
+                console.warn("⚠️ Payout error detected:", payoutData.error);
+                if (payoutData.body) console.log("📄 Raw response body:", payoutData.body);
+              }
+            } catch (err) {
+              console.error("🔥 Payout request failed:", err);
             }
-          } else {
-            console.log("⚠️ Payout not sent or failed");
-          }
-        });
+          };
+
+          piPayment.onCancel = () => console.log("❌ User cancelled payment");
+          piPayment.onError = (err) => console.error("🔥 Pi SDK error", err);
+        }
       }
 
-      setSubscriptions(
-        subscriptions.map((s) =>
-          s.id === subscriptionId ? { ...s, status: "active" } : s
-        )
-      );
+      setSubscriptions(subscriptions.map((s) =>
+        s.id === subscriptionId ? { ...s, status: "active" } : s
+      ));
     } catch (err) {
       console.error("🔥 handleApprove error:", err);
     }
