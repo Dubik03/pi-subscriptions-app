@@ -91,8 +91,17 @@ export default function MySubscriptions() {
       if (result.payments && result.payments.length) {
         result.payments.forEach((p) => {
           console.log(`💰 Payment released: id=${p.id}, payee_id=${p.payee_id}`);
+
           if (p.payoutResult) {
             console.log("💸 Payout response:", p.payoutResult);
+
+            // Pokud payoutResult obsahuje chybu, vypíšeme ji a raw body
+            if (p.payoutResult.error) {
+              console.warn("⚠️ Payout error detected:", p.payoutResult.error);
+              if (p.payoutResult.body) {
+                console.log("📄 Raw response body:", p.payoutResult.body);
+              }
+            }
           } else {
             console.log("⚠️ Payout not sent or failed");
           }
